@@ -22,8 +22,10 @@ function parseRepoUrl(repoUrl) {
  */
 function getZipUrl(repoUrl) {
     const { owner, repo } = parseRepoUrl(repoUrl);
-
-    return `https://github.com/${owner}/${repo}/archive/refs/heads/main.zip`;
+    
+    // 💡 This "legacy" URL format automatically redirects 
+    // to the default branch's ZIP archive on GitHub.
+    return `https://github.com/${owner}/${repo}/zipball/master`;
 }
 
 /**
