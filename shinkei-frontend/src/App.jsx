@@ -176,23 +176,46 @@ export default function App() {
     { label: "Search", url: "https://github.com/example/search", key: "search" },
   ];
 
-  const handleAnalyze = (urlVal, flowKey) => {
-    if (!urlVal.trim()) {
-      setError("Please enter a GitHub repository URL.");
-      return;
-    }
+ const handleAnalyze = async () => {
+  if (!url) {
+    setError("Please enter a GitHub repo URL");
+    return;
+  }
+
+  try {
+    setLoading(true);
     setError("");
     setFlow(null);
-    setVisible(false);
-    setLoading(true);
-    const key = flowKey || (urlVal.includes("shop") ? "checkout" : urlVal.includes("search") ? "search" : "login");
-    setTimeout(() => {
-      setFlow(MOCK_FLOWS[key] || MOCK_FLOWS.login);
-      setLoading(false);
-      setTimeout(() => setVisible(true), 80);
-    }, 900);
-  };
 
+    const res = await fetch("http://localhost:5000/api/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ repoUrl: url }),
+    });
+
+    console.log("STATUS:", res.status);
+
+    const text = await res.text(); // 👈 IMPORTANT
+    console.log("RAW RESPONSE:", text);
+
+    if (!res.ok) {
+      throw new Error(text);
+    }
+
+    const data = JSON.parse(text); // parse manually
+
+    setFlow(Array.isArray(data.flow) ? data.flow : []);
+    setVisible(true);
+
+  } catch (err) {
+    console.error("ERROR:", err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
   const stats = flow ? {
     total: flow.length,
     frontend: flow.filter(s => ["event", "function"].includes(s.type) && !s.file.includes("Controller") && !s.file.includes("Service") && !s.file.includes("routes")).length,
@@ -291,7 +314,7 @@ export default function App() {
               placeholder="https://github.com/username/repository"
               value={url}
               onChange={e => { setUrl(e.target.value); setError(""); }}
-              onKeyDown={e => e.key === "Enter" && handleAnalyze(url)}
+              onKeyDown={e => e.key === "Enter" && handleAnalyze}
               style={{
                 flex: 1,
                 background: "transparent",
@@ -304,7 +327,7 @@ export default function App() {
               }}
             />
             <button
-              onClick={() => handleAnalyze(url)}
+              onClick={handleAnalyze}
               disabled={loading}
               style={{
                 background: loading ? "#334155" : "linear-gradient(135deg,#7c3aed,#6366f1)",
@@ -334,7 +357,10 @@ export default function App() {
           {demos.map(d => (
             <button
               key={d.key}
-              onClick={() => { setUrl(d.url); handleAnalyze(d.url, d.key); }}
+              onClick={() => {
+  setUrl(d.url);
+  setTimeout(() => handleAnalyze(), 0);
+}}
               style={{
                 background: "rgba(30,41,59,0.7)",
                 border: "1px solid rgba(71,85,105,0.5)",

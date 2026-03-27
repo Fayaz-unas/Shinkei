@@ -1,0 +1,14 @@
+const app = require("./app");
+const { clearTempFolder } = require("./utils/githubZipHandler");
+
+const PORT = 5000;
+
+async function start() {
+    await clearTempFolder(); // 🔥 THIS is what you wanted
+
+    app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+    });
+}
+
+start();

@@ -1,0 +1,13 @@
+
+```
+
+That's the only critical one. `node_modules` should never be committed.
+
+---
+
+If you want a more complete one, open `.gitignore` and paste this:
+```
+node_modules/
+uploads/
+temp/
+.env
