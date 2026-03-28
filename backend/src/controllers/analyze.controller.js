@@ -1,5 +1,5 @@
 const { fetchRepoAsZip } = require("../utils/githubZipHandler");
-const globalIndex        = require("../services/globalIndex.service");
+const globalIndex        = require("../services/analyzer.service");
 
 exports.analyzeRepo = async (req, res) => {
     try {
