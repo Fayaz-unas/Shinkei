@@ -135,7 +135,8 @@ function App() {
   const [flow, setFlow]       = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const handleAnalyze = (url, fnText, forcedKey) => {
+  // 1. Make the function async
+ const handleAnalyze = async (url, fnText) => {
     setFlow(null);
     setLoading(true);
     const key = forcedKey || resolveFlowKey(url, fnText);
