@@ -74,7 +74,8 @@ function extractAxiosConfig(args, path, filePath, from, results) {
         method:  method.toUpperCase(),
         url:     resolveUrl(urlNode),
         from,
-        line:    path.node.loc?.start.line,
+        startLine:path.node.loc?.start.line,
+        endLine: path.node.loc?.end.line,
         file:    filePath,
         isDynamic: urlNode?.type !== "StringLiteral",
     });
@@ -117,7 +118,8 @@ function extract(context) {
                     method:   fetchMethod(args),
                     url,
                     from,
-                    line:     path.node.loc?.start.line,
+                    startLine:     path.node.loc?.start.line,
+                    endLine: path.node.loc?.end.line,
                     file:     filePath,
                     isDynamic: args[0]?.type !== "StringLiteral",
                 });
@@ -146,7 +148,8 @@ function extract(context) {
                     method:   method.toUpperCase(),
                     url,
                     from,
-                    line:     path.node.loc?.start.line,
+                    startLine:     path.node.loc?.start.line,
+                    endLine: path.node.loc?.end.line,
                     file:     filePath,
                     isDynamic: args[0]?.type !== "StringLiteral",
                 });

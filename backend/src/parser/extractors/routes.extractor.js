@@ -149,10 +149,11 @@ function extract(context) {
                 router:     object,
                 handler,
                 middleware,
-                isDynamic:  routePath.startsWith("dynamic:") || routePath.includes(":"),
-                isUse:      method === "use",
-                line:       path.node.loc?.start.line,
-                file:       filePath,
+                isDynamic: routePath.startsWith("dynamic:") || routePath.includes(":"),
+                isUse: method === "use",
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line,
+                file: filePath,
             });
         },
 

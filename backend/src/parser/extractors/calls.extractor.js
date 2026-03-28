@@ -170,7 +170,7 @@ function extract(context) {
             const from = getCurrentFunction(path);
             
             // Register the constructor call
-            addCall(name, object, from, "constructor", path.node.loc?.start.line, path.node.arguments.length);
+            addCall(name, object, from, "constructor", path.node.loc?.start.line,  path.node.arguments.length);
             
             // Scan its arguments for callbacks
             extractCallbacksFromArgs(path.node.arguments, from);

@@ -1,3 +1,5 @@
+const e = require("express");
+
 const traverse = require("@babel/traverse").default;
 
 /**
@@ -35,7 +37,8 @@ function extract(context) {
             isLocal: entry.isLocal ?? false,
             isDynamic: entry.isDynamic ?? false,
             isType: entry.isType ?? false,
-            line: entry.line ?? null,
+            startLine: entry.startLine ?? null,
+            endLine: entry.endLine ?? null,
             file: filePath
         });
     }
@@ -55,7 +58,8 @@ function extract(context) {
                     type: "sideEffect",
                     isLocal,
                     isType: isDeclType,
-                    line: path.node.loc?.start.line
+                    startLine: path.node.loc?.start.line,
+                    endLine: path.node.loc?.end.line
                 });
                 return;
             }
@@ -82,7 +86,7 @@ function extract(context) {
                     type       = "namespace";
                 }
 
-                pushResult({ name, importedAs, source, type, isLocal, isType, line: path.node.loc?.start.line });
+                pushResult({ name, importedAs, source, type, isLocal, isType, startLine: path.node.loc?.start.line, endLine: path.node.loc?.end.line });
             });
         },
 
@@ -113,7 +117,8 @@ function extract(context) {
                         type: "named",
                         isLocal,
                         isDynamic,
-                        line: path.node.loc?.start.line
+                        startLine: path.node.loc?.start.line,
+                        endLine: path.node.loc?.end.line
                     });
                 });
             } else if (path.node.id?.type === "Identifier") {
@@ -124,7 +129,8 @@ function extract(context) {
                     type: "default",
                     isLocal,
                     isDynamic,
-                    line: path.node.loc?.start.line
+                    startLine: path.node.loc?.start.line,
+                    endLine: path.node.loc?.end.line
                 });
             }
         },
@@ -149,7 +155,8 @@ function extract(context) {
                     type: "sideEffect",
                     isLocal: source?.startsWith(".") ?? false,
                     isDynamic,
-                    line: path.node.loc?.start.line
+                    startLine: path.node.loc?.start.line,
+                    endLine: path.node.loc?.end.line
                 });
             }
         },
@@ -174,7 +181,8 @@ function extract(context) {
                 type: "dynamic",
                 isLocal: source?.startsWith(".") ?? false,
                 isDynamic,
-                line: path.node.loc?.start.line
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line
             });
         },
 
@@ -193,7 +201,8 @@ function extract(context) {
                     type: "reExport",
                     isLocal,
                     isType,
-                    line: path.node.loc?.start.line
+                    startLine: path.node.loc?.start.line,
+                    endLine: path.node.loc?.end.line
                 });
             });
         },
@@ -208,7 +217,8 @@ function extract(context) {
                 source,
                 type: "reExportAll",
                 isLocal,
-                line: path.node.loc?.start.line
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line
             });
         }
     });

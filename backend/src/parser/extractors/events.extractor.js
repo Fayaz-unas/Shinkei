@@ -141,7 +141,8 @@ function extract(context) {
                 element,                       // "button" | "LoginForm" | etc.
                 handler,                       // direct handler name or "inline"
                 callsInside,                   // functions called inside inline arrow
-                line:        path.node.loc?.start.line,
+                startLine:        path.node.loc?.start.line,
+                endLine:     path.node.loc?.end.line,
                 file:        filePath,
                 isInline:    handler === "inline" || callsInside.length > 0,
             });

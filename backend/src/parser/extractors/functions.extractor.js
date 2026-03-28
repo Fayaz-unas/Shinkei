@@ -42,7 +42,8 @@ function extract(context) {
 
             push({
                 name,
-                line: path.node.loc?.start.line,
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line,
                 type: "declaration",
                 isAsync: path.node.async ?? false,
                 isExported,
@@ -73,7 +74,8 @@ function extract(context) {
 
             push({
                 name,
-                line: path.node.loc?.start.line,
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line,
                 type: "arrow",
                 isAsync: path.node.async ?? false,
                 isExported,
@@ -118,7 +120,8 @@ function extract(context) {
 
             push({
                 name,
-                line: path.node.loc?.start.line,
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line,
                 type,
                 isAsync: path.node.async ?? false,
                 isExported: path.parent.type === "ExportNamedDeclaration",
@@ -133,7 +136,8 @@ function extract(context) {
 
             push({
                 name,
-                line: path.node.loc?.start.line,
+                startLine: path.node.loc?.start.line,
+                endLine: path.node.loc?.end.line,   
                 type: "classMethod",
                 isAsync: path.node.async ?? false,
                 isStatic: path.node.static ?? false,
