@@ -24,8 +24,10 @@ function App() {
     setFlow(null);
   };
 
-  const handleAnalyze = (url, fnText, forcedKey) => {
+  // This function now talks to your actual backend
+  const handleAnalyze = async (url, fnText) => {
     setFlow(null);
+    setStats(null);
     setLoading(true);
     const key = forcedKey || resolveFlowKey(url, fnText);
     setTimeout(() => {
