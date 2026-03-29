@@ -1,16 +1,12 @@
 import { useState } from 'react';
 
-const DEMOS = [
-  { label: 'Login flow',  url: 'https://github.com/example/app',    key: 'login',    fn: 'handleSubmit'   },
-  { label: 'Checkout',    url: 'https://github.com/example/shop',   key: 'checkout', fn: 'handleCheckout' },
-  { label: 'Search',      url: 'https://github.com/example/search', key: 'search',   fn: 'handleSearch'   },
-];
-
 export default function RepoInput({ onAnalyze, loading, analyzed }) {
-  const [url, setUrl]       = useState('');
-  const [fnText, setFnText] = useState('');
-  const [error, setError]   = useState('');
-  const [started, setStarted] = useState(false);
+  const [url, setUrl]             = useState('');
+  const [fnText, setFnText]       = useState('');
+  const [direction, setDirection] = useState('forward');
+  const [steps, setSteps]         = useState(10);
+  const [error, setError]         = useState('');
+  const [started, setStarted]     = useState(false);
 
   const submit = (urlVal, fnVal, key) => {
     if (!urlVal.trim()) { setError('Please enter a GitHub repository URL.'); return; }
@@ -34,6 +30,24 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
 
   return (
     <div className="repo-input-wrap">
+      <div style={{ marginBottom: '20px' }}>
+        <h3 style={{
+          fontSize: '18px',
+          fontWeight: 600,
+          color: 'white',
+          marginBottom: '6px',
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          Analyze a Repository
+        </h3>
+        <p style={{
+          fontSize: '13px',
+          color: '#c4b5fd',
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          Enter a GitHub URL and function name to trace.
+        </p>
+      </div>
 
       {/* Repo URL */}
       <label className="field-label">Repository URL</label>
@@ -64,6 +78,48 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
               onKeyDown={e => e.key === 'Enter' && handleAnalyzeClick()}
             />
           </div>
+
+          {/* Direction + Steps row */}
+          <div style={{ display: 'flex', gap: '12px', marginTop: 14 }}>
+            {/* Direction toggle */}
+            <div style={{ flex: 1 }}>
+              <label className="field-label">Direction</label>
+              <div className="direction-toggle">
+                <button
+                  type="button"
+                  className={`direction-option ${direction === 'forward' ? 'active' : ''}`}
+                  onClick={() => setDirection('forward')}
+                >
+                  Forward →
+                </button>
+                <button
+                  type="button"
+                  className={`direction-option ${direction === 'backward' ? 'active' : ''}`}
+                  onClick={() => setDirection('backward')}
+                >
+                  ← Backward
+                </button>
+              </div>
+            </div>
+
+            {/* Steps input */}
+            <div style={{ width: '120px', flexShrink: 0 }}>
+              <label className="field-label">Steps</label>
+              <div className="input-row">
+                <input
+                  type="number"
+                  className="repo-input"
+                  placeholder="10"
+                  min={1}
+                  max={100}
+                  value={steps}
+                  onChange={e => setSteps(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                  onKeyDown={e => e.key === 'Enter' && handleAnalyzeClick()}
+                  style={{ textAlign: 'center' }}
+                />
+              </div>
+            </div>
+          </div>
         </>
       )}
 
@@ -73,7 +129,7 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
         className={`analyze-btn full-width ${loading ? 'loading' : ''}`}
         onClick={handleAnalyzeClick}
         disabled={loading}
-        style={{ marginTop: 12 }}
+        style={{ marginTop: 14 }}
       >
         {loading ? 'Parsing…' : (started ? 'Analyze Flow →' : 'Next')}
       </button>

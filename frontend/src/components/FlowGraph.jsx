@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback } from 'react';
 import CodePanel from './CodePanel';
 
 const TYPE = {
-  event:    { label: 'Event',    accent: '#EF9F27', bg: 'rgba(239,159,39,0.07)',  border: 'rgba(239,159,39,0.35)',  text: '#FAC775' },
-  function: { label: 'Function', accent: '#7F77DD', bg: 'rgba(127,119,221,0.07)', border: 'rgba(127,119,221,0.35)', text: '#CECBF6' },
-  api:      { label: 'API',      accent: '#1D9E75', bg: 'rgba(29,158,117,0.07)',  border: 'rgba(29,158,117,0.35)',  text: '#9FE1CB' },
-  response: { label: 'Response', accent: '#378ADD', bg: 'rgba(55,138,221,0.07)',  border: 'rgba(55,138,221,0.35)',  text: '#B5D4F4' },
+  event:    { label: 'Event',    accent: '#EF9F27', bg: 'rgba(239,159,39,0.12)',  border: 'rgba(239,159,39,0.45)',  text: '#FDD68A' },
+  function: { label: 'Function', accent: '#7F77DD', bg: 'rgba(127,119,221,0.12)', border: 'rgba(127,119,221,0.45)', text: '#DEDCF9' },
+  api:      { label: 'API',      accent: '#1D9E75', bg: 'rgba(29,158,117,0.12)',  border: 'rgba(29,158,117,0.45)',  text: '#B5ECDA' },
+  response: { label: 'Response', accent: '#378ADD', bg: 'rgba(55,138,221,0.12)',  border: 'rgba(55,138,221,0.45)',  text: '#C8DFF7' },
 };
 
 const NW         = 200;
@@ -137,8 +137,8 @@ function EdgePath({ from, to, label, pos, levels, visible, backward }) {
         <text
           x={(sx + ex) / 2}
           y={my - 6}
-          textAnchor="middle" fontSize="9"
-          fontFamily="monospace" fill="#818cf8" letterSpacing="0.04em"
+          textAnchor="middle" fontSize="11"
+          fontFamily="monospace" fill="#a5b4fc" letterSpacing="0.04em" fontWeight="500"
         >
           {label}
         </text>
@@ -182,15 +182,15 @@ function NodeCard({ node, pos, isRoot, isActive, onClick, level, visible }) {
         stroke={isRoot || isActive ? t.accent : t.border}
         strokeWidth={isRoot ? 1.8 : isActive ? 1.8 : 0.8} />
       <rect x={x} y={y} width={4} height={NH} rx={2} fill={t.accent} />
-      <text x={x + 14} y={y + 18} fontSize="8.5" fontFamily="monospace"
+      <text x={x + 14} y={y + 18} fontSize="10" fontFamily="monospace"
         fontWeight="700" fill={t.accent} letterSpacing="0.10em">
         {t.label.toUpperCase()}{isRoot ? ' · ROOT' : ''}
       </text>
-      <text x={x + 14} y={y + 37} fontSize="11.5" fontFamily="monospace"
-        fontWeight="500" fill={t.text}>
+      <text x={x + 14} y={y + 37} fontSize="13" fontFamily="monospace"
+        fontWeight="600" fill={t.text}>
         {shortLabel}
       </text>
-      <text x={x + 14} y={y + 53} fontSize="9.5" fontFamily="monospace" fill="#475569">
+      <text x={x + 14} y={y + 53} fontSize="11" fontFamily="monospace" fill="#64748b">
         {shortFile} :{node.line}
       </text>
     </g>
@@ -234,23 +234,19 @@ export default function FlowGraph({ flowData, direction = 'forward' }) {
           position: relative;
           width: 100vw;
           margin-left: calc(-50vw + 50%);
-          height: 100vh;
+          min-height: 100vh;
           display: flex;
           flex-direction: row;
-          overflow: hidden;
-          contain: layout;
+          overflow: visible;
         }
 
         /* graph panel: full width centered → shrinks to 50% left on click */
         .fg-graph-panel {
-          position: absolute;
-          top: 0;
-          left: 0;
-          height: 100%;
+          position: relative;
           width: 100%;
           display: flex;
           flex-direction: column;
-          overflow: hidden;
+          overflow: visible;
           transition: width 0.45s cubic-bezier(0.4,0,0.2,1);
         }
         .fg-graph-panel.has-active {
@@ -270,13 +266,10 @@ export default function FlowGraph({ flowData, direction = 'forward' }) {
 
         /* hide all scrollbars on the graph scroll area */
         .fg-scroll {
-          flex: 1;
-          overflow: auto;
           display: flex;
           align-items: flex-start;
           justify-content: center;
-          scrollbar-width: none;        /* Firefox */
-          -ms-overflow-style: none;     /* IE/Edge */
+          overflow: visible;
         }
         .fg-scroll::-webkit-scrollbar {
           display: none;                /* Chrome/Safari */
