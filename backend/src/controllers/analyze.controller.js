@@ -1,5 +1,9 @@
 const { fetchRepoAsZip } = require("../utils/githubZipHandler");
-const globalIndex = require("../services/analyzer.service.js");
+
+// ── NEW ARCHITECTURE IMPORTS ──────────────────────────────────────
+// Replacing the deprecated analyzer.service.js monolith
+const { index } = require("../services/indexBuilder"); 
+const { analyzeFunction } = require("../services/queryEngine");
 
 exports.analyzeRepo = async (req, res) => {
     try {
@@ -13,14 +17,18 @@ exports.analyzeRepo = async (req, res) => {
         }
 
         const directionSafe = direction === "backward" ? "backward" : "forward";
-        const depthSafe = depth && Number.isInteger(Number(depth)) && Number(depth) > 0
+        const depthSafe = (depth && Number.isInteger(Number(depth)) && Number(depth) > 0)
             ? Number(depth)
             : null;
 
         const repoPath = await fetchRepoAsZip(repoUrl);
-        globalIndex.build(repoPath);
+        
+        // 1. BUILD STEP: Delegate to indexBuilder
+        // TODO (Future): Implement caching to avoid rebuilding per request
+         await index.build(repoPath);
 
-        const result = globalIndex.analyzeFunction(
+        // 2. ANALYZE STEP: Delegate to queryEngine
+        const result = analyzeFunction(
             entryFunction,
             directionSafe,
             depthSafe
@@ -33,51 +41,40 @@ exports.analyzeRepo = async (req, res) => {
             });
         }
 
-        // ── NEW FILTER LOGIC ──────────────────────────────────────────────
-        
-        // 1. Get raw nodes/edges
-        const rawNodes = result.nodes || result.fullGraph?.nodes || [];
-        const rawEdges = result.edges || result.fullGraph?.edges || [];
-
-        // 2. Filter out 'member' type nodes (internal object calls like console.log)
-        const filteredNodes = rawNodes.filter(n => n.type !== 'member');
-        const validNodeIds = new Set(filteredNodes.map(n => n.id));
-
-        // 3. Keep only edges where both ends exist after filtering
-        const filteredEdges = rawEdges.filter(
-            e => validNodeIds.has(e.from) && validNodeIds.has(e.to)
-        );
-
-        // 4. Update the sequential flow list as well
-        const filteredFlow = (result.flow || []).filter(step => step.type !== 'member');
-
         // ── FORMATTER HELPER ──────────────────────────────────────────────
-        
         const formatToNumericFlow = (nodes, edges) => {
-            const getId = (idStr) => {
-                if (typeof idStr === 'number') return idStr;
-                return parseInt(idStr.toString().replace('node_', ''), 10);
+            const idMap = new Map();
+            let counter = 0;
+
+            const getNumericId = (originalId) => {
+                if (!idMap.has(originalId)) {
+                    idMap.set(originalId, counter++);
+                }
+                return idMap.get(originalId);
             };
 
             return {
                 root: 0,
-                nodes: nodes.map(n => ({ ...n, id: getId(n.id) })),
-                edges: edges.map(e => ({ from: getId(e.from), to: getId(e.to) }))
+                nodes: nodes.map(n => ({
+                    ...n,
+                    originalId: n.id,   // preserve string ID; numeric id is for graph rendering only
+                    id: getNumericId(n.id),
+                })),
+                edges: edges.map(e => ({
+                    from: getNumericId(e.from),
+                    to:   getNumericId(e.to),
+                })),
             };
         };
 
-        const numericFlow = formatToNumericFlow(filteredNodes, filteredEdges);
+        const numericFlow = formatToNumericFlow(result.fullGraph.nodes, result.fullGraph.edges);
 
         // ── FINAL RESPONSE ────────────────────────────────────────────────
-        
         return res.json({ 
             success: true, 
-            flow: numericFlow, // This is what SHINKEI UI uses for the graph
-            trace: filteredFlow, // The step-by-step list
-            stats: {
-                ...result.stats,
-                memberCalls: 0 // Resetting since they are filtered out
-            }
+            flow: numericFlow, 
+            trace: result.flow, 
+            stats: result.stats 
         });
 
     } catch (err) {
