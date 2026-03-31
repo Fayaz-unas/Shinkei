@@ -262,12 +262,13 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.55, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
               style={{
-                maxWidth: '800px',
+                maxWidth: '1400px',
                 margin: '0 auto',
                 width: '100%',
-                padding: '12px 28px 100px',
+                padding: '12px clamp(12px, 3vw, 28px) 100px',
                 position: 'relative',
                 zIndex: 2,
+                boxSizing: 'border-box',
               }}
             >
               <FlowViewer

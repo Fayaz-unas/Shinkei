@@ -1,6 +1,14 @@
-import { Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, Send } from 'lucide-react';
 
 export default function SummaryView({ summary, typing, accentColor }) {
+  const [chatText, setChatText] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setChatText('');
+  };
+
   return (
     <div style={{
       flex: 1,
@@ -129,66 +137,56 @@ export default function SummaryView({ summary, typing, accentColor }) {
         </div>
       )}
 
-      {/* Bottom row: Complexity + Side Effects */}
-      <div style={{
-        display: 'flex',
-        gap: 12,
-        marginTop: 4,
-      }}>
-        {/* Complexity */}
-        <div style={{
-          flex: 1,
-          background: 'rgba(15,23,42,0.5)',
-          border: '1px solid rgba(71,85,105,0.15)',
-          borderRadius: 10,
-          padding: '10px 14px',
-        }}>
-          <div style={{
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            color: '#475569',
-            marginBottom: 4,
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>Complexity</div>
-          <div style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: summary.complexity === 'Low' ? '#34d399' :
-                   summary.complexity === 'Medium' ? '#fbbf24' : '#f87171',
+      {/* Chat Box */}
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          marginTop: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          paddingTop: 10,
+          borderTop: '1px solid rgba(139,92,246,0.12)',
+        }}
+      >
+        <input
+          value={chatText}
+          onChange={(e) => setChatText(e.target.value)}
+          placeholder="Ask about this summary..."
+          style={{
+            flex: 1,
+            height: 36,
+            borderRadius: 10,
+            border: '1px solid rgba(139,92,246,0.2)',
+            background: 'rgba(15,23,42,0.55)',
+            color: '#e2e8f0',
+            fontSize: 12,
+            padding: '0 12px',
+            outline: 'none',
             fontFamily: "'Inter', sans-serif",
-          }}>{summary.complexity}</div>
-        </div>
+          }}
+        />
+        <button
+          type="submit"
+          aria-label="Send message"
+          disabled={!chatText.trim()}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            border: '1px solid rgba(139,92,246,0.25)',
+            background: chatText.trim() ? 'rgba(139,92,246,0.2)' : 'rgba(51,65,85,0.45)',
+            color: chatText.trim() ? '#c4b5fd' : '#64748b',
+            display: 'grid',
+            placeItems: 'center',
+            cursor: chatText.trim() ? 'pointer' : 'not-allowed',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <Send style={{ width: 14, height: 14 }} />
+        </button>
+      </form>
 
-        {/* Side Effects */}
-        <div style={{
-          flex: 1,
-          background: 'rgba(15,23,42,0.5)',
-          border: '1px solid rgba(71,85,105,0.15)',
-          borderRadius: 10,
-          padding: '10px 14px',
-        }}>
-          <div style={{
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            color: '#475569',
-            marginBottom: 4,
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>Side Effects</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {summary.sideEffects.map((s, i) => (
-              <span key={i} style={{
-                fontSize: 11,
-                color: '#94a3b8',
-                fontFamily: "'Inter', sans-serif",
-              }}>⚡ {s}</span>
-            ))}
-          </div>
-        </div>
-      </div>
 
       <style>{`
         @keyframes cursor-blink {

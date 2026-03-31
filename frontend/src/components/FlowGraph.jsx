@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import CodePanel from './CodePanel';
 import { NODE_TYPES } from '../constants/nodeTypes';
 import {
@@ -9,19 +9,16 @@ import {
 const TYPE = NODE_TYPES;
 
 // ── Edge ───────────────────────────────────────────────────────────────────
-function EdgePath({ from, to, label, pos, levels, visible, backward, edgeIndex }) {
+function EdgePath({ from, to, label, pos, levels, visible, edgeIndex, backward = false }) {
   const fp = pos[from], tp = pos[to];
   if (!fp || !tp) return null;
 
-  // Detect if the "from" node is visually below the "to" node (reverse edge)
-  // This happens when the backend sends edges like { from: route, to: controller }
-  // where the route is placed deeper in the layout than the controller
-  const isReverseEdge = fp.y > tp.y;
-  const flipped = backward ? !isReverseEdge : isReverseEdge;
+  const topNode = fp.y <= tp.y ? fp : tp;
+  const bottomNode = fp.y <= tp.y ? tp : fp;
 
-  const [sx, sy_start, ex, ey_start] = flipped
-    ? [PAD + tp.x + NW / 2, PAD + tp.y + NH,  PAD + fp.x + NW / 2, PAD + fp.y]
-    : [PAD + fp.x + NW / 2, PAD + fp.y + NH,  PAD + tp.x + NW / 2, PAD + tp.y];
+  const [sx, sy_start, ex, ey_start] = backward
+    ? [PAD + bottomNode.x + NW / 2, PAD + bottomNode.y, PAD + topNode.x + NW / 2, PAD + topNode.y + NH]
+    : [PAD + topNode.x + NW / 2, PAD + topNode.y + NH, PAD + bottomNode.x + NW / 2, PAD + bottomNode.y];
 
   const my = (sy_start + ey_start) / 2;
 
@@ -36,7 +33,7 @@ function EdgePath({ from, to, label, pos, levels, visible, backward, edgeIndex }
     d = `M ${sx} ${sy_start} C ${sx} ${my}, ${ex} ${my}, ${ex} ${ey_start}`;
   }
 
-  const destLevel = backward ? levels[from] : levels[to];
+  const destLevel = Math.max(levels[from] ?? 0, levels[to] ?? 0);
   const gradId = `edge-grad-${edgeIndex}`;
   const flowId = `edge-flow-${edgeIndex}`;
 
@@ -195,6 +192,7 @@ function NodeCard({ node, pos, isRoot, isActive, onClick, level, visible }) {
 export default function FlowGraph({ flowData, direction = 'forward', maxSteps = 10 }) {
   const [activeId,  setActiveId]  = useState(null);
   const [animReady, setAnimReady] = useState(false);
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     setActiveId(null);
@@ -220,28 +218,50 @@ export default function FlowGraph({ flowData, direction = 'forward', maxSteps = 
   const activeNode = filteredNodes.find(n => n.id === activeId);
   const hasActive  = !!activeNode;
 
+  useEffect(() => {
+    if (!scrollRef.current || hasActive) return;
+
+    const frame = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+      el.scrollLeft = maxScroll / 2;
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [svgW, hasActive, direction, maxSteps]);
+
   return (
     <>
       <style>{`
         .fg-shell {
+          --fg-code-panel-width: clamp(432px, 40.8vw, 576px);
+          --fg-code-panel-height: clamp(420px, 72vh, 820px);
           position: relative;
-          width: 100vw;
-          margin-left: calc(-50vw + 50%);
+          width: 100%;
+          max-width: 100%;
           display: flex;
           flex-direction: row;
+          align-items: flex-start;
+          gap: 0;
           overflow: visible;
+          transition: gap 0.5s cubic-bezier(0.22,1,0.36,1);
+        }
+        .fg-shell.has-active {
+          gap: 16px;
         }
 
         .fg-graph-panel {
           position: relative;
           width: 100%;
+          min-width: 0;
           display: flex;
           flex-direction: column;
-          overflow: visible;
+          overflow: hidden;
           transition: width 0.5s cubic-bezier(0.22,1,0.36,1);
         }
         .fg-graph-panel.has-active {
-          width: 50%;
+          width: calc(100% - var(--fg-code-panel-width) - 16px);
         }
 
         .fg-hint {
@@ -249,46 +269,67 @@ export default function FlowGraph({ flowData, direction = 'forward', maxSteps = 
           font-size: 12px;
           color: rgba(100,116,139,0.7);
           font-family: 'Inter', sans-serif;
-          padding: 6px 0 2px;
+          padding: 6px 0 8px;
           letter-spacing: 0.03em;
           flex-shrink: 0;
           margin: 0;
         }
 
         .fg-scroll {
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          overflow: visible;
+          width: 100%;
+          max-width: 100%;
+          overflow-x: auto;
+          overflow-y: visible;
+          box-sizing: border-box;
+          padding: 0 8px 8px;
+          scrollbar-width: thin;
         }
-        .fg-scroll::-webkit-scrollbar {
-          display: none;
+
+        .fg-scroll-inner {
+          width: fit-content;
+          min-width: 100%;
+          margin: 0 auto;
+          padding: 0 24px;
+          box-sizing: border-box;
+          display: flex;
+          justify-content: center;
         }
 
         .fg-code-panel {
-          position: absolute;
-          top: 0;
-          right: 0;
-          bottom: 0;
-          width: 50%;
-          overflow-y: auto;
+          position: sticky;
+          top: 84px;
+          align-self: flex-start;
+          flex: 0 0 0;
+          width: 0;
+          max-width: 0;
+          height: min(var(--fg-code-panel-height), calc(100vh - 96px));
+          overflow: hidden;
           scrollbar-width: none;
           -ms-overflow-style: none;
-          transform: translateX(100%);
+          transform: translateX(24px);
           opacity: 0;
-          transition: transform 0.5s cubic-bezier(0.22,1,0.36,1),
+          transition: flex-basis 0.5s cubic-bezier(0.22,1,0.36,1),
+                      width 0.5s cubic-bezier(0.22,1,0.36,1),
+                      max-width 0.5s cubic-bezier(0.22,1,0.36,1),
+                      transform 0.5s cubic-bezier(0.22,1,0.36,1),
                       opacity 0.4s ease;
           pointer-events: none;
-          border-left: none;
+          border: 1px solid transparent;
+          border-radius: 16px;
+          background: rgba(15,10,30,0.97);
+          box-shadow: 0 18px 48px rgba(2,6,23,0.28);
         }
         .fg-code-panel::-webkit-scrollbar {
           display: none;
         }
         .fg-code-panel.has-active {
+          flex: 0 0 var(--fg-code-panel-width);
+          width: var(--fg-code-panel-width);
+          max-width: min(100%, var(--fg-code-panel-width));
           transform: translateX(0);
           opacity: 1;
           pointer-events: all;
-          border-left: 1px solid rgba(139,92,246,0.08);
+          border-color: rgba(139,92,246,0.08);
         }
 
         .fg-empty {
@@ -303,20 +344,63 @@ export default function FlowGraph({ flowData, direction = 'forward', maxSteps = 
           font-family: 'JetBrains Mono', monospace;
           letter-spacing: 0.05em;
         }
+
+        @media (max-width: 1024px) {
+          .fg-shell,
+          .fg-shell.has-active {
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          .fg-graph-panel,
+          .fg-graph-panel.has-active,
+          .fg-code-panel,
+          .fg-code-panel.has-active {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            transform: none;
+          }
+
+          .fg-code-panel {
+            display: none;
+            flex-basis: auto;
+            height: min(70vh, 420px);
+            max-width: 100%;
+            opacity: 1;
+            pointer-events: none;
+            border-left: none;
+            border-top: 1px solid rgba(139,92,246,0.08);
+            margin-top: 0;
+          }
+
+          .fg-code-panel.has-active {
+            display: block;
+            pointer-events: all;
+          }
+        }
       `}</style>
 
-      <div className="fg-shell">
+      <div className={`fg-shell ${hasActive ? 'has-active' : ''}`}>
 
         {/* GRAPH */}
         <div className={`fg-graph-panel ${hasActive ? 'has-active' : ''}`}>
           <p className="fg-hint">Click a node to inspect</p>
-          <div className="fg-scroll">
-            <svg
-              width={svgW}
-              height={svgH}
-              viewBox={`0 0 ${svgW} ${svgH}`}
-              style={{ display: 'block', flexShrink: 0 }}
-            >
+          <div ref={scrollRef} className="fg-scroll">
+            <div className="fg-scroll-inner">
+              <svg
+                width={svgW}
+                height={svgH}
+                viewBox={`0 0 ${svgW} ${svgH}`}
+                style={{
+                  display: 'block',
+                  margin: '0 auto',
+                  width: `${svgW}px`,
+                  height: `${svgH}px`,
+                  maxWidth: 'none',
+                  overflow: 'visible',
+                }}
+              >
               <defs>
                 {/* Arrow marker */}
                 <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5"
@@ -336,23 +420,24 @@ export default function FlowGraph({ flowData, direction = 'forward', maxSteps = 
 
               {filteredEdges.map((e, i) => (
                 <EdgePath key={i} from={e.from} to={e.to} label={e.label}
-                  pos={pos} levels={levels} visible={animReady} backward={backward}
-                  edgeIndex={i} />
+                  pos={pos} levels={levels} visible={animReady}
+                  edgeIndex={i} backward={backward} />
               ))}
 
-              {filteredNodes.map(nd => (
-                <NodeCard
-                  key={nd.id}
-                  node={nd}
-                  pos={pos}
-                  isRoot={nd.id === rootId}
-                  isActive={nd.id === activeId}
-                  onClick={handleNodeClick}
-                  level={levels[nd.id] ?? 0}
-                  visible={animReady}
-                />
-              ))}
-            </svg>
+                {filteredNodes.map(nd => (
+                  <NodeCard
+                    key={nd.id}
+                    node={nd}
+                    pos={pos}
+                    isRoot={nd.id === rootId}
+                    isActive={nd.id === activeId}
+                    onClick={handleNodeClick}
+                    level={levels[nd.id] ?? 0}
+                    visible={animReady}
+                  />
+                ))}
+              </svg>
+            </div>
           </div>
         </div>
 

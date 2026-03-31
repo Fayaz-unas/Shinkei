@@ -48,11 +48,9 @@ export default function CodePanel({ node, onClose }) {
       const data = await res.json();
       if (data.success) {
         setSummary({
-          purpose:     data.explanation.explanation,
-          details:     data.explanation.steps      ?? [],
-          calls:       [],
-          complexity:  'Low',
-          sideEffects: [],
+          purpose: data.explanation.explanation,
+          details: data.explanation.steps ?? [],
+          calls: [],
         });
         setShowSummary(true);
       }
