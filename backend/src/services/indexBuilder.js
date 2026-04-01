@@ -3,12 +3,12 @@
  * BUILD LAYER — collect and organise raw parsed data from the repo.
  *
  * Responsibilities
- *  ✅ Walk repo files
- *  ✅ Parse each file via runParser
- *  ✅ Index functions by ID    ("file::name::startLine" → definition)
- *  ✅ Index functions by name  (name → [ids])  — proximity hint only
- *  ✅ Index routes by "METHOD::path"            — no overwrite on same path
- *  ✅ Index files    (relativePath → parsed data)
+ * ✅ Walk repo files
+ * ✅ Parse entire project at once via TS analyzeProject
+ * ✅ Index functions by ID    ("file::name::startLine" → definition)
+ * ✅ Index functions by name  (name → [ids])  — proximity hint only
+ * ✅ Index routes by "METHOD::path"            — no overwrite on same path
+ * ✅ Index files    (relativePath → parsed data)
  *
  * ❌ No reverseMap  (relationship concern — lives in resolverAdapter)
  * ❌ No traversal   ❌ No filtering   ❌ No resolution logic
@@ -16,7 +16,7 @@
 
 const path = require("path");
 const { fileWalker: getAllFiles } = require("../utils/fileWalker");
-const { runParser }               = require("../parser/engine/parserEngine");
+const { analyzeProject }          = require("../parser/engine/parserEngine"); // <-- New TS Engine Import
 
 // ─── Canonical ID builders (exported so all layers use the same format) ───────
 
@@ -94,17 +94,11 @@ class IndexBuilder {
     // ─── Public ───────────────────────────────────────────────────────────────
 
     /**
-     * Scans repoPath, parses every supported file, and populates all indexes.
+     * Scans repoPath, parses every supported file in one TS batch, and populates all indexes.
      * Idempotent — calling build() again resets and rebuilds cleanly.
      *
      * @param {string} repoPath - Absolute path to the repository root
      */
-   // ─── Public ───────────────────────────────────────────────────────────────
-
-    /**
-     * Scans repoPath, parses every supported file, and populates all indexes.
-     */
-    // UPDATED: Made method async
     async build(repoPath) {
         this.repoPath = repoPath;
         this._reset();
@@ -112,12 +106,16 @@ class IndexBuilder {
         // Invalidate code cache — new repo or re-scan means files may have changed
         try { require("./code_service").clearCache(); } catch (_) { /* optional dep */ }
 
-        // Standard for...of loop perfectly handles await
-        for (const absolutePath of getAllFiles(repoPath)) {
+        // 1. Grab all files in the repo
+        const allAbsolutePaths = getAllFiles(repoPath);
+        
+        // 2. Feed them ALL into the new TypeScript engine at once
+        const projectDataMap = await analyzeProject(allAbsolutePaths);
+
+        // 3. Loop through the results and populate your indexes
+        for (const [absolutePath, data] of projectDataMap.entries()) {
             const relativePath = this._toRelative(absolutePath, repoPath);
             
-            // UPDATED: Await the parser engine!
-            const data = await runParser(absolutePath);
             if (!data) continue;
 
             this.files.set(relativePath, data);
@@ -134,6 +132,7 @@ class IndexBuilder {
             ` | events: ${this.events.size}`
         );
     }
+
     // ─── Private ──────────────────────────────────────────────────────────────
 
     _reset() {

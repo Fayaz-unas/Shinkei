@@ -1,41 +1,31 @@
 /**
- * parserEngine.js
+ * parserEngine.js (TypeScript Compiler API Version)
  *
  * Industry-grade pipeline:
- *   parseFile → ParserContext → parallel extractors (ordered) → collector
+ * analyzeProject → ts.createProgram → parallel extractors → collector
  *
- * Features
- *  ✅ Correct extractor order  (imports first → calls can use shared map)
- *  ✅ Parallel execution       (Promise.allSettled — no blocking)
- *  ✅ Per-extractor isolation  (one crash ≠ whole file fails)
- *  ✅ Structured error logging (never silent)
- *  ✅ Parse metadata           (timing, file type, content hash)
- *  ✅ Config forwarding        (options passed into context)
+ * Features:
+ * ✅ Whole-Project Context    (Replaces file-by-file Babel parsing)
+ * ✅ Native TypeChecker       (Replaces custom import/instance mapping)
+ * ✅ Parallel execution       (Promise.allSettled — no blocking)
+ * ✅ Per-extractor isolation  (one crash ≠ whole file fails)
+ * ✅ Structured diagnostics   (errors surfaced, never silently swallowed)
  */
 
-const { parseFile }       = require("../parseFile");
-const { ParserContext }   = require("./context");
+const ts = require("typescript");
 const { createCollector } = require("./collector");
 
+// ─── Extractor registry ───────────────────────────────────────────────────────
+// We will uncomment these as we rewrite them to use TypeScript.
 const functionsExtractor = require("../extractors/functions_extractor");
 const callsExtractor     = require("../extractors/calls_extractor");
 const apiCallsExtractor  = require("../extractors/apiCalls_extractor");
 const routesExtractor    = require("../extractors/routes_extractor");
 const eventsExtractor    = require("../extractors/events_extractor");
-const importsExtractor   = require("../extractors/imports_extractor");
 
-// ─── Extractor registry ───────────────────────────────────────────────────────
-// ORDER MATTERS: imports must run first so context.getImportMap() is warm
-// before calls / apiCalls try to use it.
-//
-// Stage 1 — runs sequentially first (builds shared maps)
-// Stage 2 — runs in parallel (independent of each other)
-
-const STAGE_1 = [
-    { name: "imports",   extractor: importsExtractor,   add: "addImport"   },
-];
-
-const STAGE_2 = [
+// Notice: STAGE_1 (imports_extractor) is completely gone. 
+// TypeScript resolves all imports natively during createProgram.
+const EXTRACTORS = [
     { name: "functions", extractor: functionsExtractor, add: "addFunction" },
     { name: "calls",     extractor: callsExtractor,     add: "addCall"     },
     { name: "apiCalls",  extractor: apiCallsExtractor,  add: "addApiCall"  },
@@ -66,90 +56,92 @@ async function runExtractor({ name, extractor, add }, context, collector) {
 // ─── Main pipeline ────────────────────────────────────────────────────────────
 
 /**
- * Parses a single file and returns a structured result.
+ * Parses the entire project upfront and extracts data from every file.
  *
- * @param {string} filePath  - Absolute path to the JS/TS file
- * @param {object} [options] - Pipeline config forwarded to ParserContext
- * @returns {object|null}    - Collected data + metadata, or null on parse failure
+ * @param {string[]} filePaths - Array of absolute paths to all JS/TS files in the repo
+ * @param {object}   [options] - Optional TS compiler options overrides
+ * @returns {Map<string, object>} - Map of filePath -> Collected data + metadata
  */
-async function runParser(filePath, options = {}) {
+async function analyzeProject(filePaths, options = {}) {
     const startedAt = Date.now();
+    const allCollectedData = new Map();
 
-    // ── 1. Parse file → AST ───────────────────────────────────────────────────
-    let ast;
-    try {
-        ast = parseFile(filePath);
-    } catch (err) {
-        _log("error", filePath, `AST parse failed: ${err.message}`);
-        return null;
-    }
+    _log("info", "Global", `Initializing TypeScript Compiler for ${filePaths.length} files...`);
 
-    if (!ast) {
-        _log("error", filePath, "parseFile returned null — skipping file");
-        return null;
-    }
+    // ── 1. Create the Global TypeScript Program ───────────────────────────────
+    // This replaces parseFile.js. It reads the files, handles encoding, builds ASTs, 
+    // and links all cross-file imports and types automatically.
+    const program = ts.createProgram(filePaths, {
+        target: ts.ScriptTarget.Latest,
+        module: ts.ModuleKind.CommonJS,
+        allowJs: true,       // Crucial: analyze standard .js files too
+        checkJs: true,       // Infer types in .js files via JSDoc/usage
+        jsx: ts.JsxEmit.ReactJSX,
+        ...options
+    });
 
-    // ── 2. Build shared context + collector ───────────────────────────────────
-    const context   = new ParserContext(ast, filePath, options);
-    const collector = createCollector(filePath);
+    // ── 2. The TypeChecker (The Brain) ────────────────────────────────────────
+    // This replaces context.js. It allows extractors to ask "where did this come from?"
+    const checker = program.getTypeChecker();
 
-    const extractorMeta = [];   // per-extractor diagnostics
-
-    // ── 3. Stage 1: sequential (warms shared maps e.g. importMap) ────────────
-    for (const descriptor of STAGE_1) {
-        const meta = await runExtractor(descriptor, context, collector);
-        extractorMeta.push(meta);
-        if (meta.error) {
-            _log("warn", filePath, `[${meta.name}] extractor error: ${meta.error}`);
+    // ── 3. Loop through files and extract ─────────────────────────────────────
+    for (const sourceFile of program.getSourceFiles()) {
+        // Skip TypeScript internal definitions and dependencies
+        if (sourceFile.isDeclarationFile || sourceFile.fileName.includes("node_modules")) {
+            continue;
         }
-    }
 
-    // Explicitly warm shared maps on context so Stage 2 extractors never
-    // trigger lazy computation mid-parallel-batch (avoids race conditions
-    // if extractors are ever made truly async).
-    context.getImportMap();
-    context.getFunctionMap();
+        const filePath = sourceFile.fileName;
+        const collector = createCollector(filePath);
+        
+        // The new, significantly leaner context passed to extractors
+        const context = {
+            sourceFile,
+            checker,
+            filePath
+        };
 
-    // ── 4. Stage 2: parallel (all independent of each other) ─────────────────
-    const stage2Results = await Promise.allSettled(
-        STAGE_2.map((descriptor) => runExtractor(descriptor, context, collector))
-    );
+        const extractorMeta = [];
 
-    for (const settled of stage2Results) {
-        // allSettled never rejects — but runExtractor already catches internally
-        const meta = settled.status === "fulfilled"
-            ? settled.value
-            : { name: "unknown", count: 0, error: String(settled.reason) };
+        // ── 4. Run Extractors (Parallel) ──────────────────────────────────────
+        const stageResults = await Promise.allSettled(
+            EXTRACTORS.map((descriptor) => runExtractor(descriptor, context, collector))
+        );
 
-        extractorMeta.push(meta);
-        if (meta.error) {
-            _log("warn", filePath, `[${meta.name}] extractor error: ${meta.error}`);
+        for (const settled of stageResults) {
+            const meta = settled.status === "fulfilled"
+                ? settled.value
+                : { name: "unknown", count: 0, error: String(settled.reason) };
+
+            extractorMeta.push(meta);
+            if (meta.error) {
+                _log("warn", filePath, `[${meta.name}] extractor error: ${meta.error}`);
+            }
         }
+
+        // ── 5. Assemble file result ───────────────────────────────────────────
+        const collected = collector.getData();
+        allCollectedData.set(filePath, {
+            ...collected,
+            _meta: {
+                parsedAt:    new Date().toISOString(),
+                fileExt:     filePath.split('.').pop(),
+                extractors:  extractorMeta,
+                summary:     collector.getSummary(),
+            },
+        });
     }
 
-    // ── 5. Assemble final result ──────────────────────────────────────────────
-    const collected = collector.getData();
-
-    return {
-        ...collected,
-
-        // ── Metadata block ────────────────────────────────────────────────────
-        _meta: {
-            parsedAt:    new Date().toISOString(),
-            durationMs:  Date.now() - startedAt,
-            contentHash: context.contentHash,
-            fileExt:     context.fileExt,
-            extractors:  extractorMeta,          // per-extractor counts + errors
-            summary:     collector.getSummary(),  // { functions: N, calls: N, … }
-        },
-    };
+    _log("info", "Global", `Analysis complete in ${Date.now() - startedAt}ms`);
+    return allCollectedData;
 }
 
 // ─── Internal logger ──────────────────────────────────────────────────────────
 function _log(level, file, message) {
     const prefix = `[parserEngine][${level.toUpperCase()}] ${file}:`;
     if (level === "error") console.error(prefix, message);
-    else                   console.warn(prefix, message);
+    else if (level === "info") console.log(prefix, message);
+    else console.warn(prefix, message);
 }
 
-module.exports = { runParser };
+module.exports = { analyzeProject };

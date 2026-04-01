@@ -1,240 +1,186 @@
-const traverse = require("@babel/traverse").default;
-
 /**
- * events_extractor.js  — FINAL PRODUCTION VERSION
- *
- *  ✅ "inline" black hole eliminated: every single-call arrow → real handler name
- *  ✅ Multi-call arrows: all callsInside preserved, each item is a resolvable name
- *  ✅ callFunctionIds: pre-built IDs for resolver linkage (filePath::name form)
- *  ✅ Component context: detects React function components, class render(), HOC wraps
- *  ✅ isReactComponent heuristic: PascalCase name || returns JSX
- *  ✅ Conditional handlers: both branches extracted into callsInside
- *  ✅ Deeply nested: IfStatement, LogicalExpression, SequenceExpression, nested arrows
- *  ✅ Dynamic handler (computed member) flagged, not silently dropped
- *  ✅ Deduplication: event::handler::line (file-scoped)
- *  ✅ Consistent startLine/endLine everywhere
+ * events_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * * ✅ Top-down React component tracking (no more walking up the AST).
+ * ✅ handlerFunctionId perfectly resolved via TypeChecker.
+ * ✅ "inline" multi-call arrows preserved and deeply extracted.
+ * ✅ Exact startLine/endLine everywhere.
  */
 
-// ─── recursively extract ALL direct call names from a function body ───────────
-function extractCallsInsideArrow(arrowNode) {
+const ts = require("typescript");
+
+// ─── Extract nested calls inside an inline arrow: onClick={() => { a(); b(); }} ──
+function extractCallsInside(node) {
     const calls = [];
-
-    function walk(node) {
-        if (!node || typeof node !== "object") return;
-
-        if (node.type === "CallExpression" || node.type === "OptionalCallExpression") {
-            const callee = node.callee;
+    
+    function visit(child) {
+        if (ts.isCallExpression(child)) {
             let name = null;
-
-            if (callee.type === "Identifier") {
-                name = callee.name;
-            } else if (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") {
-                const obj  = callee.object?.name ?? null;
-                const prop = callee.property?.name ?? null;
-                name = obj && prop ? `${obj}.${prop}` : (prop ?? obj);
+            if (ts.isIdentifier(child.expression)) {
+                name = child.expression.text;
+            } else if (ts.isPropertyAccessExpression(child.expression)) {
+                const obj = ts.isIdentifier(child.expression.expression) ? child.expression.expression.text : "?";
+                const prop = child.expression.name.text;
+                name = `${obj}.${prop}`;
             }
-
-            if (name) calls.push(name);
-            (node.arguments ?? []).forEach(walk);
+            if (name) calls.push({ name, callNode: child.expression });
         }
-
-        // Structured traversal for all branch types
-        switch (node.type) {
-            case "BlockStatement":
-                (node.body ?? []).forEach(walk); break;
-            case "ExpressionStatement":
-                walk(node.expression); break;
-            case "ReturnStatement":
-                walk(node.argument); break;
-            case "IfStatement":
-                walk(node.test); walk(node.consequent); walk(node.alternate); break;
-            case "LogicalExpression":
-                walk(node.left); walk(node.right); break;
-            case "ConditionalExpression":
-                walk(node.test); walk(node.consequent); walk(node.alternate); break;
-            case "SequenceExpression":
-                (node.expressions ?? []).forEach(walk); break;
-            case "ArrowFunctionExpression":
-            case "FunctionExpression":
-                walk(node.body); break;
-            case "SwitchStatement":
-                walk(node.discriminant);
-                (node.cases ?? []).forEach(c => (c.consequent ?? []).forEach(walk)); break;
-        }
+        ts.forEachChild(child, visit);
     }
-
-    walk(arrowNode.body);
-    return [...new Set(calls)];
+    
+    visit(node);
+    return calls;
 }
 
-// ─── resolve handler info from a JSX attribute value node ────────────────────
-function resolveHandler(valueNode) {
-    if (!valueNode) return { handler: null, callsInside: [], isDynamic: false };
-
-    if (valueNode.type !== "JSXExpressionContainer")
-        return { handler: null, callsInside: [], isDynamic: false };
-
-    const expr = valueNode.expression;
+// ─── Resolve the handler from the JSX Attribute ───────────────────────────────
+function resolveHandler(expr) {
+    if (!expr) return { handler: null, callsInside: [], isDynamic: false, handlerNode: null };
 
     // onClick={handleLogin}
-    if (expr.type === "Identifier") {
-        return { handler: expr.name, callsInside: [], isDynamic: false };
+    if (ts.isIdentifier(expr)) {
+        return { handler: expr.text, callsInside: [], isDynamic: false, handlerNode: expr };
     }
 
     // onClick={auth.handleLogin}
-    if (expr.type === "MemberExpression" || expr.type === "OptionalMemberExpression") {
-        if (expr.computed) {
-            // onClick={handlers[key]} — truly dynamic
-            return { handler: "dynamic", callsInside: [], isDynamic: true };
-        }
-        const obj  = expr.object?.name  ?? null;
-        const prop = expr.property?.name ?? null;
-        const name = obj && prop ? `${obj}.${prop}` : (prop ?? obj);
-        return { handler: name, callsInside: [], isDynamic: false };
+    if (ts.isPropertyAccessExpression(expr)) {
+        const obj = ts.isIdentifier(expr.expression) ? expr.expression.text : "?";
+        const prop = expr.name.text;
+        return { handler: `${obj}.${prop}`, callsInside: [], isDynamic: false, handlerNode: expr.name };
     }
 
-    // onClick={() => login()}  OR  onClick={() => { a(); b(); }}
-    if (expr.type === "ArrowFunctionExpression" || expr.type === "FunctionExpression") {
-        const calls = extractCallsInsideArrow(expr);
+    // onClick={handlers[key]} (Dynamic)
+    if (ts.isElementAccessExpression(expr)) {
+        return { handler: "dynamic", callsInside: [], isDynamic: true, handlerNode: null };
+    }
 
-        // Single call → fully resolve to real name (eliminates inline black hole)
-        if (calls.length === 1) return { handler: calls[0], callsInside: calls, isDynamic: false };
+    // onClick={() => login()}
+    if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) {
+        const extracted = extractCallsInside(expr);
+        const callsInsideNames = extracted.map(c => c.name);
+        const callsInsideNodes = extracted.map(c => c.callNode);
 
-        // Multi-call → label "inline" but all targets are known
-        return { handler: calls.length > 1 ? "inline" : null, callsInside: calls, isDynamic: false };
+        if (callsInsideNames.length === 1) {
+            return { handler: callsInsideNames[0], callsInside: callsInsideNames, callsInsideNodes, isDynamic: false, handlerNode: callsInsideNodes[0] };
+        }
+        return { handler: callsInsideNames.length > 1 ? "inline" : null, callsInside: callsInsideNames, callsInsideNodes, isDynamic: false, handlerNode: null };
     }
 
     // onClick={condition ? handlerA : handlerB}
-    if (expr.type === "ConditionalExpression") {
+    if (ts.isConditionalExpression(expr)) {
         const branches = [];
-        [expr.consequent, expr.alternate].forEach(branch => {
-            if (!branch) return;
-            if (branch.type === "Identifier") {
-                branches.push(branch.name);
-            } else if (branch.type === "MemberExpression") {
-                const o = branch.object?.name  ?? null;
-                const p = branch.property?.name ?? null;
-                if (o && p) branches.push(`${o}.${p}`);
-                else if (p) branches.push(p);
-            } else if (branch.type === "ArrowFunctionExpression" || branch.type === "FunctionExpression") {
-                branches.push(...extractCallsInsideArrow(branch));
-            }
+        [expr.whenTrue, expr.whenFalse].forEach(branch => {
+            if (ts.isIdentifier(branch)) branches.push(branch.text);
+            else if (ts.isPropertyAccessExpression(branch)) branches.push(branch.name.text);
         });
-        return { handler: "conditional", callsInside: branches.filter(Boolean), isDynamic: false };
+        return { handler: "conditional", callsInside: branches, isDynamic: false, handlerNode: null };
     }
 
-    // onClick={null}  or  onClick={undefined}  — suppress
-    if (expr.type === "NullLiteral" || (expr.type === "Identifier" && expr.name === "undefined")) {
-        return { handler: null, callsInside: [], isDynamic: false };
-    }
-
-    return { handler: null, callsInside: [], isDynamic: false };
+    return { handler: null, callsInside: [], isDynamic: false, handlerNode: null };
 }
 
-// ─── detect enclosing React component + whether it's really a component ───────
-function getComponentContext(path) {
-    let cur = path.parentPath;
-    while (cur) {
-        const n = cur.node;
-
-        if (n.type === "FunctionDeclaration" && n.id?.name) {
-            return {
-                component:        n.id.name,
-                isReactComponent: /^[A-Z]/.test(n.id.name),
-            };
-        }
-
-        if ((n.type === "ArrowFunctionExpression" || n.type === "FunctionExpression") &&
-            cur.parent?.type === "VariableDeclarator") {
-            const name = cur.parent.id?.name ?? "anonymous";
-            return {
-                component:        name,
-                isReactComponent: /^[A-Z]/.test(name),
-            };
-        }
-
-        // class component: render() method
-        if (n.type === "ClassMethod" && n.key?.name === "render") {
-            let c = cur.parentPath;
-            while (c) {
-                if (c.node.type === "ClassDeclaration" || c.node.type === "ClassExpression") {
-                    const className = c.node.id?.name ?? "AnonymousClass";
-                    return { component: className, isReactComponent: true };
-                }
-                c = c.parentPath;
-            }
-        }
-
-        // HOC: export default connect(mapState)(MyComponent) → look for inner function
-        if (n.type === "ObjectProperty" &&
-            (n.value?.type === "FunctionExpression" || n.value?.type === "ArrowFunctionExpression")) {
-            const name = n.key?.name ?? "anonymous";
-            return { component: name, isReactComponent: false };
-        }
-
-        cur = cur.parentPath;
-    }
-    return { component: "unknown", isReactComponent: false };
-}
-
-// ─── main ─────────────────────────────────────────────────────────────────────
+// ─── Main Extractor ───────────────────────────────────────────────────────────
 function extract(context) {
-    const results  = [];
-    const filePath = context.filePath || "unknown";
-    const seen     = new Set();
+    const { sourceFile, checker, filePath } = context;
+    const results = [];
+    const seen = new Set();
 
-    traverse(context.ast, {
-        JSXAttribute(path) {
-            const attrName = path.node.name?.name;
-            if (typeof attrName !== "string" || !attrName.startsWith("on")) return;
+    // ─── TypeChecker Magic for Handlers ───
+    function getFunctionId(node) {
+        if (!node) return null;
+        
+        const symbol = checker.getSymbolAtLocation(node);
+        if (!symbol) return null;
+        
+        const targetSymbol = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+        const decl = targetSymbol.valueDeclaration || (targetSymbol.declarations && targetSymbol.declarations[0]);
+        
+        if (decl) {
+            const declFile = decl.getSourceFile();
+            const startLine = declFile.getLineAndCharacterOfPosition(decl.getStart()).line + 1;
+            let targetName = targetSymbol.name;
+            return `${declFile.fileName}::${targetName}::${startLine}`;
+        }
+        return null;
+    }
 
-            const { handler, callsInside, isDynamic } = resolveHandler(path.node.value);
-            if (!handler && callsInside.length === 0) return;
+    function push(entry) {
+        const dedupeKey = `${filePath}::${entry.event}::${entry.handler}::${entry.startLine}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        results.push(entry);
+    }
 
-            // Element name
-            const openingEl = path.parentPath?.node;
-            let element = "unknown";
-            if (openingEl?.name?.type === "JSXIdentifier") {
-                element = openingEl.name.name;
-            } else if (openingEl?.name?.type === "JSXMemberExpression") {
-                element = `${openingEl.name.object?.name}.${openingEl.name.property?.name}`;
+    // ─── Recursive AST Walker ───
+    // We pass the React Component and the DOM Element state down the tree!
+    function visit(node, currentComponent = "unknown", isReact = false, currentElement = "unknown") {
+        let nextComponent = currentComponent;
+        let nextIsReact = isReact;
+        let nextElement = currentElement;
+
+        // 1. Track React Component Context
+        if (ts.isFunctionDeclaration(node) && node.name) {
+            nextComponent = node.name.text;
+            nextIsReact = /^[A-Z]/.test(nextComponent); // PascalCase heuristic
+        } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && 
+                  node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
+            nextComponent = node.name.text;
+            nextIsReact = /^[A-Z]/.test(nextComponent);
+        } else if (ts.isClassDeclaration(node) && node.name) {
+            nextComponent = node.name.text;
+            nextIsReact = true;
+        }
+
+        // 2. Track JSX Element Context (e.g., <button>, <LoginForm>)
+        if (ts.isJsxElement(node)) {
+            nextElement = ts.isIdentifier(node.openingElement.tagName) ? node.openingElement.tagName.text : "unknown";
+        } else if (ts.isJsxSelfClosingElement(node)) {
+            nextElement = ts.isIdentifier(node.tagName) ? node.tagName.text : "unknown";
+        }
+
+        // 3. Extract JSX Attributes (Events)
+        if (ts.isJsxAttribute(node) && node.name) {
+            const attrName = node.name.text;
+            
+            // Only care about "on*" events
+            if (attrName.startsWith("on") && node.initializer && ts.isJsxExpression(node.initializer)) {
+                const { handler, callsInside, callsInsideNodes, isDynamic, handlerNode } = resolveHandler(node.initializer.expression);
+                
+                if (handler || callsInside.length > 0) {
+                    const startLine = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+                    const endLine = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+
+                    // Use the TypeChecker to get the exact ID of the handler!
+                    const handlerFunctionId = getFunctionId(handlerNode) || (handler && handler !== "inline" ? `${filePath}::${handler}` : null);
+                    
+                    // Resolve IDs for all inline calls too
+                    const callFunctionIds = (callsInsideNodes || []).map((cNode, i) => 
+                        getFunctionId(cNode) || `${filePath}::${callsInside[i]}`
+                    );
+
+                    push({
+                        event: attrName,
+                        element: nextElement,
+                        component: nextComponent,
+                        isReactComponent: nextIsReact,
+                        handler,
+                        handlerFunctionId,
+                        callsInside,
+                        callFunctionIds,
+                        isInline: handler === "inline",
+                        isConditional: handler === "conditional",
+                        isDynamic,
+                        startLine,
+                        endLine,
+                        file: filePath,
+                    });
+                }
             }
+        }
 
-            const startLine = path.node.loc?.start.line;
-            const dedupeKey = `${filePath}::${attrName}::${handler}::${startLine}`;
-            if (seen.has(dedupeKey)) return;
-            seen.add(dedupeKey);
+        // Keep walking
+        ts.forEachChild(node, (childNode) => visit(childNode, nextComponent, nextIsReact, nextElement));
+    }
 
-            const { component, isReactComponent } = getComponentContext(path);
-
-            // Pre-build function IDs for the resolver to link against functions_extractor output
-            // Calls that are qualified (auth.login) stay as-is; simple names get filePath prefix
-            const callFunctionIds = callsInside.map(name =>
-                name.includes(".") ? name : `${filePath}::${name}`
-            );
-            const handlerFunctionId = handler && handler !== "inline" && handler !== "conditional" && handler !== "dynamic"
-                ? (handler.includes(".") ? handler : `${filePath}::${handler}`)
-                : null;
-
-            results.push({
-                event:             attrName,
-                element,
-                component,
-                isReactComponent,
-                handler,
-                handlerFunctionId,
-                callsInside,
-                callFunctionIds,
-                isInline:          handler === "inline",
-                isConditional:     handler === "conditional",
-                isDynamic,
-                startLine,
-                endLine:           path.node.loc?.end.line,
-                file:              filePath,
-            });
-        },
-    });
-
+    visit(sourceFile);
     return results;
 }
 

@@ -1,73 +1,70 @@
-const traverse = require("@babel/traverse").default;
-
 /**
- * apiCalls_extractor.js  — FINAL PRODUCTION VERSION
- *
- *  ✅ axios("/url") shorthand detected
- *  ✅ axios.create({ baseURL }) tracked — baseURL merged into child call URLs
- *  ✅ someWrapper(axios) instances: detects any variable assigned via a call that wraps axios
- *  ✅ BinaryExpression URLs: partial static prefix preserved ("dynamic:/api/+" not lost)
- *  ✅ normalizedUrl: lowercase, trailing slash stripped, ready for route matching
- *  ✅ routeMatchKey: normalizedUrl with :param normalization for fuzzy backend matching
- *  ✅ Deduplication: method::url::from::line (file-scoped)
- *  ✅ Consistent startLine/endLine everywhere
- *  ✅ methodIsDynamic flag when method is a variable, not a string literal
+ * apiCalls_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * * ✅ Recursively tracks calling functions (no more walking up the AST)
+ * ✅ axios("/url") shorthand detected
+ * ✅ axios.create({ baseURL }) tracked — baseURL merged into child call URLs
+ * ✅ BinaryExpression URLs and Template Literals supported
+ * ✅ Exact startLine/endLine everywhere
  */
+
+const ts = require("typescript");
 
 const HTTP_METHODS = new Set(["get","post","put","patch","delete","head","request","options"]);
 
-// ─── URL resolution ───────────────────────────────────────────────────────────
+// ─── URL Resolution ───────────────────────────────────────────────────────────
 function resolveUrl(node) {
-    if (!node) return { url: null, isDynamic: false };
+    if (!node) return { url: null, isDynamic: false, staticPrefix: null };
 
-    if (node.type === "StringLiteral" || node.type === "Literal") {
-        return { url: node.value, isDynamic: false };
+    // "string" or 'string'
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        return { url: node.text, isDynamic: false, staticPrefix: node.text };
     }
 
-    if (node.type === "TemplateLiteral") {
-        const parts = [];
-        node.quasis.forEach((q, i) => {
-            parts.push(q.value.cooked ?? q.value.raw);
-            if (i < node.expressions.length) {
-                const e = node.expressions[i];
-                parts.push(`:${e.name ?? e.property?.name ?? "param"}`);
-            }
+    // `/api/users/${id}`
+    if (ts.isTemplateExpression(node)) {
+        const parts = [node.head.text];
+        node.templateSpans.forEach(span => {
+            parts.push(":param"); // Replace variable with generic param
+            parts.push(span.literal.text);
         });
-        return { url: `dynamic:${parts.join("")}`, isDynamic: true };
-    }
-
-    if (node.type === "Identifier") {
-        return { url: `dynamic:${node.name}`, isDynamic: true };
-    }
-
-    // "/api/users" + id  → preserve static prefix
-    if (node.type === "BinaryExpression" && node.operator === "+") {
-        const left  = resolveUrl(node.left);
-        const right = resolveUrl(node.right);
-        const staticPrefix = !left.isDynamic ? left.url : null;
-        const suffix       = right.isDynamic ? `:${node.right.name ?? "param"}` : right.url;
-        return {
-            url:       `dynamic:${staticPrefix ?? ""}${suffix}`,
-            isDynamic: true,
-            staticPrefix,
+        return { 
+            url: `dynamic:${parts.join("")}`, 
+            isDynamic: true, 
+            staticPrefix: node.head.text || null 
         };
     }
 
-    return { url: "dynamic:unknown", isDynamic: true };
+    // dynamicVar
+    if (ts.isIdentifier(node)) {
+        return { url: `dynamic:${node.text}`, isDynamic: true, staticPrefix: null };
+    }
+
+    // "/api/users/" + id
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+        const left = resolveUrl(node.left);
+        const right = resolveUrl(node.right);
+        const staticPrefix = !left.isDynamic ? left.url : null;
+        const suffix = right.isDynamic ? ":param" : right.url;
+        return {
+            url: `dynamic:${staticPrefix ?? ""}${suffix}`,
+            isDynamic: true,
+            staticPrefix
+        };
+    }
+
+    return { url: "dynamic:unknown", isDynamic: true, staticPrefix: null };
 }
 
-// ─── URL normalization ────────────────────────────────────────────────────────
+// ─── URL Normalization (Kept from your original logic) ────────────────────────
 function normalizeUrl(url) {
     if (!url) return null;
     if (url.startsWith("dynamic:")) {
-        // normalize the static parts within dynamic URLs too
         const inner = url.slice(8).toLowerCase().trim().replace(/\/+$/, "").replace(/\/{2,}/g, "/");
         return `dynamic:${inner}`;
     }
     return url.toLowerCase().trim().replace(/\/+$/, "").replace(/\/{2,}/g, "/");
 }
 
-/** Build a route-match key: replace dynamic :param segments with :param placeholder for fuzzy matching */
 function routeMatchKey(normalizedUrl) {
     if (!normalizedUrl) return null;
     const base = normalizedUrl.startsWith("dynamic:") ? normalizedUrl.slice(8) : normalizedUrl;
@@ -78,80 +75,47 @@ function mergeBaseUrl(base, path) {
     if (!base && !path) return null;
     if (!base) return path;
     if (!path) return base;
-    // if path is absolute (starts with http:// or /), don't merge
     if (/^https?:\/\//.test(path) || path.startsWith("/")) return path;
     return normalizeUrl(`${base}/${path}`);
 }
 
-// ─── current function name ────────────────────────────────────────────────────
-function getCurrentFunction(path) {
-    let cur = path.parentPath;
-    while (cur) {
-        const n = cur.node;
-        if (n.type === "FunctionDeclaration" && n.id?.name) return n.id.name;
-        if ((n.type === "FunctionExpression" || n.type === "ArrowFunctionExpression") &&
-            cur.parent?.type === "VariableDeclarator") return cur.parent.id?.name ?? "anonymous";
-        if (n.type === "ClassMethod"  && n.key?.name) return n.key.name;
-        if (n.type === "ObjectMethod" && n.key?.name) return n.key.name;
-        cur = cur.parentPath;
-    }
-    return "module";
-}
-
-// ─── extract method from fetch options ───────────────────────────────────────
-function fetchMethod(args) {
+// ─── Extractor Helpers ────────────────────────────────────────────────────────
+function extractFetchMethod(args) {
+    if (args.length < 2) return { method: "GET", methodIsDynamic: false };
     const options = args[1];
-    if (!options) return { method: "GET", methodIsDynamic: false };
-    if (options.type === "ObjectExpression") {
-        const prop = options.properties?.find(p => (p.key?.name ?? p.key?.value) === "method");
-        if (!prop) return { method: "GET", methodIsDynamic: false };
-        if (prop.value?.type === "StringLiteral" || prop.value?.type === "Literal")
-            return { method: prop.value.value?.toUpperCase() ?? "GET", methodIsDynamic: false };
-        return { method: "DYNAMIC", methodIsDynamic: true };
+    
+    if (ts.isObjectLiteralExpression(options)) {
+        const methodProp = options.properties.find(p => 
+            ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === "method"
+        );
+        if (methodProp && methodProp.initializer) {
+            if (ts.isStringLiteral(methodProp.initializer)) {
+                return { method: methodProp.initializer.text.toUpperCase(), methodIsDynamic: false };
+            }
+            return { method: "DYNAMIC", methodIsDynamic: true };
+        }
     }
-    return { method: "UNKNOWN", methodIsDynamic: true };
+    return { method: "GET", methodIsDynamic: false };
 }
 
-// ─── extract method + url from axios config object ────────────────────────────
-function extractAxiosConfig(args, node, filePath, from, baseUrl, results, seen) {
-    const config = args[0];
-    if (!config || config.type !== "ObjectExpression") return;
-
-    const props = config.properties ?? [];
-    const get   = key => props.find(p => (p.key?.name ?? p.key?.value) === key);
-
-    const methodProp = get("method");
-    let method = "GET", methodIsDynamic = false;
-    if (methodProp?.value?.type === "StringLiteral" || methodProp?.value?.type === "Literal") {
-        method = methodProp.value.value?.toUpperCase() ?? "GET";
-    } else if (methodProp) {
-        method = "DYNAMIC"; methodIsDynamic = true;
+function getObjectPropString(objNode, keyName) {
+    if (!ts.isObjectLiteralExpression(objNode)) return null;
+    const prop = objNode.properties.find(p => 
+        ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === keyName
+    );
+    if (prop && prop.initializer && ts.isStringLiteral(prop.initializer)) {
+        return prop.initializer.text;
     }
-
-    const urlProp = get("url");
-    const { url: rawUrl, isDynamic, staticPrefix } = resolveUrl(urlProp?.value ?? null);
-    const mergedUrl   = mergeBaseUrl(baseUrl, rawUrl);
-    const normUrl     = normalizeUrl(mergedUrl ?? rawUrl);
-    const startLine   = node.loc?.start.line;
-    const dedupeKey   = `${filePath}::${method}::${normUrl}::${from}::${startLine}`;
-    if (seen.has(dedupeKey)) return;
-    seen.add(dedupeKey);
-
-    results.push({
-        lib: "axios", method, methodIsDynamic,
-        url: rawUrl, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
-        baseUrl: baseUrl ?? null, staticPrefix: staticPrefix ?? null,
-        from, startLine, endLine: node.loc?.end.line, file: filePath, isDynamic,
-    });
+    return null;
 }
 
-// ─── main ─────────────────────────────────────────────────────────────────────
+// ─── Main Extractor ───────────────────────────────────────────────────────────
 function extract(context) {
-    const results  = [];
-    const filePath = context.filePath || "unknown";
-    const seen     = new Set();
+    const { sourceFile, filePath } = context;
+    const results = [];
+    const seen = new Set();
 
-    // axiosInstances: varName → baseURL (null if none)
+    // Track axios instances: varName -> baseURL
     const axiosInstances = new Map([["axios", null]]);
 
     function push(entry) {
@@ -161,105 +125,132 @@ function extract(context) {
         results.push(entry);
     }
 
-    traverse(context.ast, {
-        // ── Detect: const api = axios.create({ baseURL })  ────────────────
-        VariableDeclarator(path) {
-            const init    = path.node.init;
-            const varName = path.node.id?.name;
-            if (!varName || !init || init.type !== "CallExpression") return;
+    // ─── Recursive AST Walker ───
+    function visit(node, currentFunction = "module") {
+        let nextFunction = currentFunction;
 
-            const callee = init.callee;
-            if (callee.type !== "MemberExpression" || callee.property?.name !== "create") return;
+        // 1. Track Caller Context (Who is making the HTTP call?)
+        if (ts.isFunctionDeclaration(node) && node.name) {
+            nextFunction = node.name.text;
+        } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && 
+                   node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
+            nextFunction = node.name.text;
+        } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+            nextFunction = node.name.text;
+            const className = ts.isClassDeclaration(node.parent) && node.parent.name ? node.parent.name.text : null;
+            if (className) nextFunction = `${className}.${nextFunction}`;
+        }
 
-            const objName = callee.object?.name ?? null;
-            // accept any known axios instance as the source of .create()
-            if (!objName || !axiosInstances.has(objName)) return;
-
-            // Extract baseURL from config arg
-            let baseURL = axiosInstances.get(objName); // inherit parent baseURL
-            const config = init.arguments?.[0];
-            if (config?.type === "ObjectExpression") {
-                const baseUrlProp = config.properties?.find(p => (p.key?.name ?? p.key?.value) === "baseURL");
-                if (baseUrlProp?.value?.type === "StringLiteral" || baseUrlProp?.value?.type === "Literal") {
-                    baseURL = mergeBaseUrl(baseURL, baseUrlProp.value.value);
+        // 2. Track: const api = axios.create({ baseURL: '/api' })
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isCallExpression(node.initializer)) {
+            const callee = node.initializer.expression;
+            if (ts.isPropertyAccessExpression(callee) && callee.name.text === "create") {
+                const objName = ts.isIdentifier(callee.expression) ? callee.expression.text : null;
+                if (objName && axiosInstances.has(objName)) {
+                    const varName = node.name.text;
+                    let baseURL = axiosInstances.get(objName); // inherit parent
+                    
+                    if (node.initializer.arguments.length > 0) {
+                        const configObj = node.initializer.arguments[0];
+                        const extractedBaseUrl = getObjectPropString(configObj, "baseURL");
+                        if (extractedBaseUrl) baseURL = mergeBaseUrl(baseURL, extractedBaseUrl);
+                    }
+                    axiosInstances.set(varName, baseURL || null);
                 }
             }
+        }
 
-            axiosInstances.set(varName, baseURL ?? null);
-        },
+        // 3. Track API Calls
+        if (ts.isCallExpression(node)) {
+            const args = node.arguments;
+            const startLine = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+            const endLine = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
 
-        CallExpression(path) {
-            const callee = path.node.callee;
-            const args   = path.node.arguments;
-            const from   = getCurrentFunction(path);
-
-            // ── fetch("url", options) ──────────────────────────────────────
-            if (callee.type === "Identifier" && callee.name === "fetch") {
+            // A. fetch("url", options)
+            if (ts.isIdentifier(node.expression) && node.expression.text === "fetch" && args.length > 0) {
                 const { url, isDynamic, staticPrefix } = resolveUrl(args[0]);
-                if (!url) return;
-                const { method, methodIsDynamic } = fetchMethod(args);
-                const normUrl = normalizeUrl(url);
-                push({
-                    lib: "fetch", method, methodIsDynamic,
-                    url, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
-                    baseUrl: null, staticPrefix: staticPrefix ?? null,
-                    from, startLine: path.node.loc?.start.line, endLine: path.node.loc?.end.line,
-                    file: filePath, isDynamic,
-                });
-                return;
-            }
-
-            // ── axios("url") shorthand or axios({ method, url }) ──────────
-            if (callee.type === "Identifier" && axiosInstances.has(callee.name)) {
-                const baseUrl = axiosInstances.get(callee.name);
-
-                // axios("url") → GET shorthand
-                if (args[0]?.type === "StringLiteral" || args[0]?.type === "Literal") {
-                    const { url, isDynamic } = resolveUrl(args[0]);
-                    const mergedUrl = mergeBaseUrl(baseUrl, url);
-                    const normUrl   = normalizeUrl(mergedUrl ?? url);
+                if (url) {
+                    const { method, methodIsDynamic } = extractFetchMethod(args);
+                    const normUrl = normalizeUrl(url);
                     push({
-                        lib: callee.name === "axios" ? "axios" : "axiosInstance",
-                        method: "GET", methodIsDynamic: false,
+                        lib: "fetch", method, methodIsDynamic,
                         url, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
-                        baseUrl: baseUrl ?? null, staticPrefix: null,
-                        from, startLine: path.node.loc?.start.line, endLine: path.node.loc?.end.line,
-                        file: filePath, isDynamic,
+                        baseUrl: null, staticPrefix,
+                        from: nextFunction, startLine, endLine, file: filePath, isDynamic
                     });
-                    return;
                 }
-
-                // axios({ method, url })
-                extractAxiosConfig(args, path.node, filePath, from, baseUrl, results, seen);
-                return;
             }
 
-            // ── axios.post() / api.get() ───────────────────────────────────
-            if (callee.type === "MemberExpression") {
-                const objName = callee.object?.name ?? null;
-                const method  = callee.property?.name ?? null;
-                if (!method || !HTTP_METHODS.has(method.toLowerCase())) return;
-                if (!objName || !axiosInstances.has(objName)) return;
+            // B. axios("url") shorthand OR axios({ method, url })
+            else if (ts.isIdentifier(node.expression) && axiosInstances.has(node.expression.text)) {
+                const instanceName = node.expression.text;
+                const baseUrl = axiosInstances.get(instanceName);
 
-                const { url, isDynamic, staticPrefix } = resolveUrl(args[0]);
-                if (!url) return;
-
-                const baseUrl   = axiosInstances.get(objName);
-                const mergedUrl = mergeBaseUrl(baseUrl, url);
-                const normUrl   = normalizeUrl(mergedUrl ?? url);
-
-                push({
-                    lib: objName === "axios" ? "axios" : "axiosInstance",
-                    method: method.toUpperCase(), methodIsDynamic: false,
-                    url, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
-                    baseUrl: baseUrl ?? null, staticPrefix: staticPrefix ?? null,
-                    from, startLine: path.node.loc?.start.line, endLine: path.node.loc?.end.line,
-                    file: filePath, isDynamic,
-                });
+                if (args.length > 0) {
+                    // axios("url")
+                    if (ts.isStringLiteral(args[0]) || ts.isNoSubstitutionTemplateLiteral(args[0])) {
+                        const { url, isDynamic } = resolveUrl(args[0]);
+                        const mergedUrl = mergeBaseUrl(baseUrl, url);
+                        const normUrl = normalizeUrl(mergedUrl || url);
+                        push({
+                            lib: instanceName === "axios" ? "axios" : "axiosInstance",
+                            method: "GET", methodIsDynamic: false,
+                            url, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
+                            baseUrl, staticPrefix: null,
+                            from: nextFunction, startLine, endLine, file: filePath, isDynamic
+                        });
+                    } 
+                    // axios({ method: 'POST', url: '/users' })
+                    else if (ts.isObjectLiteralExpression(args[0])) {
+                        const configObj = args[0];
+                        const methodStr = getObjectPropString(configObj, "method") || "GET";
+                        const rawUrlNode = configObj.properties.find(p => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === "url");
+                        
+                        if (rawUrlNode && ts.isPropertyAssignment(rawUrlNode)) {
+                            const { url, isDynamic, staticPrefix } = resolveUrl(rawUrlNode.initializer);
+                            const mergedUrl = mergeBaseUrl(baseUrl, url);
+                            const normUrl = normalizeUrl(mergedUrl || url);
+                            push({
+                                lib: instanceName === "axios" ? "axios" : "axiosInstance",
+                                method: methodStr.toUpperCase(), methodIsDynamic: methodStr === "DYNAMIC",
+                                url, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
+                                baseUrl, staticPrefix,
+                                from: nextFunction, startLine, endLine, file: filePath, isDynamic
+                            });
+                        }
+                    }
+                }
             }
-        },
-    });
 
+            // C. api.get('/users') or axios.post('/users')
+            else if (ts.isPropertyAccessExpression(node.expression)) {
+                const objName = ts.isIdentifier(node.expression.expression) ? node.expression.expression.text : null;
+                const method = node.expression.name.text;
+
+                if (objName && axiosInstances.has(objName) && HTTP_METHODS.has(method.toLowerCase()) && args.length > 0) {
+                    const { url, isDynamic, staticPrefix } = resolveUrl(args[0]);
+                    if (url) {
+                        const baseUrl = axiosInstances.get(objName);
+                        const mergedUrl = mergeBaseUrl(baseUrl, url);
+                        const normUrl = normalizeUrl(mergedUrl || url);
+
+                        push({
+                            lib: objName === "axios" ? "axios" : "axiosInstance",
+                            method: method.toUpperCase(), methodIsDynamic: false,
+                            url, normalizedUrl: normUrl, routeMatchKey: routeMatchKey(normUrl),
+                            baseUrl, staticPrefix,
+                            from: nextFunction, startLine, endLine, file: filePath, isDynamic
+                        });
+                    }
+                }
+            }
+        }
+
+        // Keep walking
+        ts.forEachChild(node, (childNode) => visit(childNode, nextFunction));
+    }
+
+    visit(sourceFile);
     return results;
 }
 
