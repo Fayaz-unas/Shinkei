@@ -1,3 +1,4 @@
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Hexagon, Activity, GitBranch } from 'lucide-react';
 import FlowViewer from './FlowViewer';
@@ -63,6 +64,82 @@ function FloatingOrbs() {
 }
 
 export default function GraphView({ isOpen, flow, trace, loading, onBackToWorkspace, initialDirection = 'forward', maxSteps = 10 }) {
+
+  // ── Telemetry Live Stream Logic ──
+// ── Telemetry Live Stream Logic ──
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const eventSource = new EventSource('http://localhost:5000/api/shinkei/v1/stream');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'pulse_batch') {
+          // 1. DILATION: How much we "stretch" real time (e.g., 50ms real -> 1s visual)
+          const DILATION_FACTOR = 20; 
+          // 2. STAGGER: The minimum time gap between pulses (1000ms = 1 second)
+          const MIN_GAP_MS = 300;
+
+          data.spans.forEach((pulse, index) => {
+            // We calculate delay based on real offset PLUS its position in the batch
+            // This guarantees they never fire simultaneously even if offsetMs is 0
+            const visualDelay = (pulse.offsetMs * DILATION_FACTOR) + (index * MIN_GAP_MS);
+
+            setTimeout(() => {
+              if (pulse.nodeId) {
+                animateGraphNode(pulse.nodeId);
+                console.log(`🌊 Flow: [${pulse.nodeId}] at visual delay +${visualDelay}ms`);
+              } else if (pulse.route) {
+                const routeId = `${pulse.method}:${pulse.route}`;
+                animateGraphRoute(routeId, pulse.durationMs);
+              }
+            }, visualDelay);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to parse telemetry event", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("EventSource failed:", err);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [isOpen]);
+
+  // ── Animation Helpers ──
+  const animateGraphNode = (nodeId) => {
+    var target = document.getElementById(nodeId);
+    if (!target) return;
+
+    target.classList.remove('live-pulse');
+    void target.offsetWidth; // Force Reflow
+    target.classList.add('live-pulse');
+
+    // 🟢 Matches the 2-second CSS animation
+    
+  };
+const animateGraphRoute = (routeId, duration) => {
+  const el = document.getElementById(routeId);
+  if (!el) return;
+
+  // 1. Reset and Force Restart (Same logic as nodes)
+  el.classList.remove('route-active');
+  void el.offsetWidth; 
+
+  // 2. Trigger the route pulse
+  el.classList.add('route-active');
+  
+  // 3. Cleanup
+  setTimeout(() => el.classList.remove('route-active'), 1000);
+};
+
   return (
     <AnimatePresence initial={false}>
       {isOpen && (
@@ -353,6 +430,7 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
             </motion.div>
           )}
 
+          {/* ── Styles (Including new Pulse Animations) ── */}
           <style>{`
             @keyframes spin {
               to { transform: rotate(360deg); }
@@ -364,6 +442,60 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
             @keyframes gv-hex-spin {
               to { transform: rotate(360deg); }
             }
+            
+            /* --- New Telemetry Pulse Animations --- */
+            @keyframes pulse-glow {
+              0% {
+                transform: scale(1);
+                box-shadow: 0 0 0px rgba(0, 255, 136, 0);
+              }
+              30% {
+                transform: scale(1.05);
+                box-shadow: 0 0 25px rgba(0, 255, 136, 0.8);
+                border-color: #00ff88;
+              }
+              100% {
+                transform: scale(1);
+                box-shadow: 0 0 0px rgba(0, 255, 136, 0);
+              }
+            }
+            
+/* --- Telemetry Pulse Animation (2-Second Flow) --- */
+  .live-pulse {
+    z-index: 100;
+  }
+
+  .live-pulse rect:first-of-type {
+    stroke: #00ff88 !important; 
+    stroke-width: 5px !important; /* Slightly thicker for visibility */
+    fill: rgba(0, 255, 136, 0.3) !important;
+    filter: drop-shadow(0 0 15px #00ff88) !important;
+
+    transform-box: fill-box;
+    transform-origin: center;
+    
+    /* 🟢 2 Second Duration with a "smooth-in, slow-out" curve */
+    animation: shinkei-pulse-animation 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes shinkei-pulse-animation {
+    0% { 
+      transform: scale(1); 
+      opacity: 1; 
+    }
+    15% { 
+      transform: scale(1.15); /* Aggressive pop */
+      filter: drop-shadow(0 0 20px #00ff88);
+    }
+    40% {
+      transform: scale(1.05); /* Linger slightly larger */
+    }
+    100% { 
+      transform: scale(1); 
+      opacity: 0.8; 
+      filter: drop-shadow(0 0 0px #00ff88);
+    }
+  }
           `}</style>
         </motion.div>
       )}

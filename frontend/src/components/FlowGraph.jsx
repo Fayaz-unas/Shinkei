@@ -108,6 +108,7 @@ function NodeCard({ node, pos, isRoot, isActive, onClick, level, visible }) {
 
   return (
     <g
+        id={node.nodeId}
       style={{
         cursor: 'pointer',
         opacity: visible ? 1 : 0,
@@ -177,6 +178,7 @@ function NodeCard({ node, pos, isRoot, isActive, onClick, level, visible }) {
         style={{ transition: 'opacity 0.2s' }}>
         {shortFile}{lineNum != null ? ` :${lineNum}` : ''}
       </text>
+
 
       {/* Active click indicator */}
       {isActive && (
