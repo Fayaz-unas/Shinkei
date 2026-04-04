@@ -73,10 +73,22 @@ class IndexBuilder {
         this.routes = new Map();
 
         /**
+         * Reverse index for routes — handlerName → [routeData, ...].
+         * @type {Map<string, object[]>}
+         */
+        this.routesByHandler = new Map();
+
+        /**
          * Event index — "event::element" → event data.
          * @type {Map<string, { id, handler, file, event, element }>}
          */
         this.events = new Map();
+
+        /**
+         * Reverse index for events — handlerId → [eventData, ...].
+         * @type {Map<string, object[]>}
+         */
+        this.eventsByHandler = new Map();
 
         /**
          * Raw parsed data per relative file path.
@@ -139,7 +151,9 @@ class IndexBuilder {
         this.functionsById.clear();
         this.functionsByName.clear();
         this.routes.clear();
+        this.routesByHandler.clear();
         this.events.clear();
+        this.eventsByHandler.clear();
         this.files.clear();
         this._invalidateReverseMap();
     }
@@ -191,13 +205,22 @@ class IndexBuilder {
                 continue;
             }
 
-            this.routes.set(id, {
+            const routeData = {
                 id,
                 handler: route.handler,
                 file:    relativePath,
                 method:  (route.method ?? "ANY").toUpperCase(),
                 path:    route.path,
-            });
+            };
+
+            this.routes.set(id, routeData);
+
+            if (route.handler) {
+                if (!this.routesByHandler.has(route.handler)) {
+                    this.routesByHandler.set(route.handler, []);
+                }
+                this.routesByHandler.get(route.handler).push(routeData);
+            }
         }
     }
 
@@ -213,13 +236,22 @@ class IndexBuilder {
                 continue;
             }
 
-            this.events.set(id, {
+            const eventData = {
                 id,
                 handler: event.handlerFunctionId,
                 file:    relativePath,
                 event:   event.event,
                 element: event.element,
-            });
+            };
+
+            this.events.set(id, eventData);
+
+            if (event.handlerFunctionId) {
+                if (!this.eventsByHandler.has(event.handlerFunctionId)) {
+                    this.eventsByHandler.set(event.handlerFunctionId, []);
+                }
+                this.eventsByHandler.get(event.handlerFunctionId).push(eventData);
+            }
         }
     }
 }

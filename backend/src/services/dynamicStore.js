@@ -133,11 +133,14 @@ class DynamicStore {
 
 
     getMetrics() {
-
         return Object.fromEntries(this.routeMetrics);
-
     }
 
+    reset() {
+        this.traces.clear();
+        this.routeMetrics.clear();
+        console.log("🧹 [DynamicStore] Reset complete.");
+    }
 }
 
 

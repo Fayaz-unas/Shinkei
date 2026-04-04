@@ -7,11 +7,29 @@ const path = require("path");
 const AdmZip = require("adm-zip");
 
 const { execSync, exec } = require("child_process");
+const net = require("net"); // 👈 Added for port discovery
+
+
+// ─── Utility: Find Available Port ────────────────────────────────────────
+
+function findFreePort(startPort) {
+    return new Promise((resolve) => {
+        const server = net.createServer();
+        server.listen(startPort, () => {
+            const { port } = server.address();
+            server.close(() => resolve(port));
+        });
+        server.on('error', () => {
+            resolve(findFreePort(startPort + 1));
+        });
+    });
+}
 
 
 // 👇 IMPORT YOUR INDEX BUILDER TO GET AST METADATA
 
 const { index } = require("../services/indexBuilder"); 
+const sseService = require("../services/sseService"); // 👈 Added for app-opening notifications
 
 
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -164,13 +182,16 @@ console.log('✅ Shinkei Require Hook Active');
 // ─── Step 2: Frontend Launcher & Interceptor ─────────────────────────────
 
 
-async function launchFrontend(repoRoot) {
+async function launchFrontend(repoRoot, options = {}) {
 
     const candidates = ['frontend', 'client', 'web', 'ui', '.'];
 
     let frontendPath = null;
 
     let startCommand = 'npm start';
+
+    const FE_PORT = options.frontendPort || 3000;
+    const BE_PORT = options.backendPort || 8000;
 
 
     for (const dir of candidates) {
@@ -210,111 +231,88 @@ async function launchFrontend(repoRoot) {
     }
 
 
-    // 2. Inject Network Interceptor to redirect 3000 to 8000
+    // 1. Force the dev server to use our port by appending flags if it's an npm command
+    let finalCommand = startCommand;
+    if (startCommand.startsWith('npm')) {
+        finalCommand = `${startCommand} -- --port ${FE_PORT}`;
+    }
 
+    // 2. Prepare Network Interceptor with dynamic hostname support
     const htmlFiles = [
-
         path.join(frontendPath, 'public', 'index.html'),
-
         path.join(frontendPath, 'index.html'),
-
         path.join(frontendPath, 'src', 'index.html')
-
     ];
 
-
     const interceptorScript = `
-
     <script>
-
       (function() {
-
-        const BACKEND_URL = 'http://localhost:8000';
-
+        const BE_PORT = '${BE_PORT}';
+        const BACKEND_URL = 'http://' + window.location.hostname + ':' + BE_PORT;
         console.log('💉 [Shinkei] Interceptor Active: Routing API traffic to ' + BACKEND_URL);
 
-
         const rewrite = (url) => {
-
           if (typeof url === 'string' && (url.startsWith('/api') || url.startsWith('api/'))) {
-
              const normalized = url.startsWith('/') ? url : '/' + url;
-
              return BACKEND_URL + normalized;
-
           }
-
           return url;
-
         };
-
 
         const origFetch = window.fetch;
-
         window.fetch = (url, init) => origFetch(rewrite(url), init);
 
-
         const origOpen = XMLHttpRequest.prototype.open;
-
         XMLHttpRequest.prototype.open = function(m, url) {
-
           return origOpen.apply(this, [m, rewrite(url), ...Array.from(arguments).slice(2)]);
-
         };
-
       })();
-
     </script>`;
 
-
     for (const file of htmlFiles) {
-
         if (fs.existsSync(file)) {
-
             let content = fs.readFileSync(file, 'utf8');
-
             if (!content.includes('BACKEND_URL')) {
-
-                content = content.replace('<head>', '<head>' + interceptorScript);
-
+                // Insert before </head> instead of after <head> for better compatibility
+                content = content.replace('</head>', interceptorScript + '</head>');
                 fs.writeFileSync(file, content);
-
                 console.log("[Shinkei] ✅ Injected Network Interceptor into " + path.basename(file));
-
             }
-
         }
-
     }
 
 
-    console.log("🚀 Launching Frontend on PORT 3000...");
+    console.log(`🚀 Launching Frontend on PORT ${FE_PORT}...`);
 
-    const child = exec(startCommand, {
-
+    const child = exec(finalCommand, {
         cwd: frontendPath,
-
         env: { 
-
             ...process.env, 
-
-            PORT: 3000, 
-
-            BROWSER: 'none',
-
-            REACT_APP_API_URL: 'http://localhost:8000',
-
-            VITE_API_URL: 'http://localhost:8000'
-
+            PORT: FE_PORT, 
+            BROWSER: 'none', // 👈 Disable default browser opening by the target app
+            REACT_APP_API_URL: `http://localhost:${BE_PORT}`,
+            VITE_API_URL: `http://localhost:${BE_PORT}`
         }
-
     });
 
+    console.log(`⏳ Waiting for frontend to stabilize... will auto-open in 3s.`);
+
+    // 🌐 Automatically open the browser after a short delay
+    const openCommand = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    setTimeout(() => {
+        console.log(`🌐 Opening target app at http://localhost:${FE_PORT}...`);
+        exec(`${openCommand} http://localhost:${FE_PORT}`);
+        
+        // 📡 Notify frontend that the app is being opened on its specific port
+        sseService.broadcast({ 
+            type: 'app_opened', 
+            url: `http://localhost:${FE_PORT}` 
+        });
+    }, 3000);
 
     child.stdout.on('data', (data) => console.log(`[Target Frontend]: ${data.trim()}`));
 
     return child;
-
 }
 
 
@@ -404,11 +402,41 @@ async function getEntryPoint(repoRoot) {
 // ─── Step 3: Analysis Orchestration ──────────────────────────────────────
 
 
-async function prepareAndRunDynamicAnalysis(repoRoot) {
+let activeProcesses = [];
+
+async function stopActiveProcesses() {
+    if (activeProcesses.length === 0) return;
+    
+    console.log(`🛑 Stopping ${activeProcesses.length} active processes...`);
+    for (const proc of activeProcesses) {
+        if (proc && !proc.killed) {
+            try {
+                // On Windows, killing process trees can be tricky with just .kill()
+                if (process.platform === 'win32') {
+                    execSync(`taskkill /pid ${proc.pid} /f /t`);
+                } else {
+                    proc.kill('SIGTERM');
+                }
+            } catch (e) {
+                // Ignore if already dead
+            }
+        }
+    }
+    activeProcesses = [];
+    console.log("✅ All target processes stopped.");
+}
+
+async function prepareAndRunDynamicAnalysis(repoRoot, options = {}) {
 
     try {
-
+        await stopActiveProcesses(); // 👈 Kill old ones before starting new ones
         console.log("🛠️  Preparing Dynamic Tracing Infrastructure...");
+
+        // 🔍 Discover available ports dynamically
+        const BE_PORT = await findFreePort(options.backendPort || 8000);
+        const FE_PORT = await findFreePort(options.frontendPort || 3000);
+
+        console.log(`📡 Allocated Ports: Backend=${BE_PORT}, Frontend=${FE_PORT}`);
 
         await fs.writeFile(path.join(repoRoot, "tracing.js"), TRACING_CODE);
 
@@ -462,32 +490,26 @@ async function prepareAndRunDynamicAnalysis(repoRoot) {
         const entryFile = await getEntryPoint(repoRoot);
 
 
-        console.log(`🚀 Launching Backend (${entryFile}) on PORT 8000...`);
+        console.log(`🚀 Launching Backend (${entryFile}) on PORT ${BE_PORT}...`);
 
         const backendCmd = `node --require ./tracing.js --require ./requireHook.js ${entryFile}`;
 
         
 
         const backendProcess = exec(backendCmd, { 
-
             cwd: repoRoot,
-
             env: { 
-
                 ...process.env, 
-
                 NODE_PATH: globalNodeModules, 
-
-                PORT: 8000, 
-
+                PORT: BE_PORT, 
                 SHINKEI_REPO_ROOT: repoRoot 
-
             }
-
         });
 
+        activeProcesses.push(backendProcess); // 👈 Track backend
 
-        const frontendProcess = await launchFrontend(repoRoot);
+        const frontendProcess = await launchFrontend(repoRoot, options);
+        if (frontendProcess) activeProcesses.push(frontendProcess); // 👈 Track frontend
 
 
         backendProcess.stdout.on('data', (data) => console.log(`[Target Backend]: ${data.trim()}`));
@@ -507,7 +529,7 @@ async function prepareAndRunDynamicAnalysis(repoRoot) {
 // ─── Utility Exports ─────────────────────────────────────────────────────
 
 
-async function fetchRepoAsZip(repoUrl, runDynamic = false) {
+async function fetchRepoAsZip(repoUrl, runDynamic = false, options = {}) {
 
     const { repo } = parseRepoUrl(repoUrl);
 
@@ -540,7 +562,7 @@ async function fetchRepoAsZip(repoUrl, runDynamic = false) {
 
     if (runDynamic) {
 
-        prepareAndRunDynamicAnalysis(repoRoot).catch(console.error);
+        prepareAndRunDynamicAnalysis(repoRoot, options).catch(console.error);
 
     }
 
@@ -550,20 +572,39 @@ async function fetchRepoAsZip(repoUrl, runDynamic = false) {
 
 
 function parseRepoUrl(url) {
-
-    const parts = url.replace(".git", "").split("/");
-
-    return { owner: parts[3], repo: parts[4] };
-
+    try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/').filter(Boolean);
+        
+        // Handle standard GitHub/GitLab/Bitbucket: /owner/repo
+        const owner = pathParts[0] || 'unknown';
+        const repo = pathParts[1] ? pathParts[1].replace('.git', '') : 'repo-' + Date.now();
+        
+        return { 
+            host: urlObj.host, 
+            hostname: urlObj.hostname,
+            owner, 
+            repo 
+        };
+    } catch (e) {
+        // Fallback for non-URL strings or local paths
+        return { owner: 'local', repo: 'project-' + Date.now() };
+    }
 }
 
 
 function getZipUrl(url) {
+    const { hostname, owner, repo } = parseRepoUrl(url);
+    
+    if (hostname.includes('gitlab.com')) {
+        return `https://gitlab.com/${owner}/${repo}/-/archive/master/${repo}-master.zip`;
+    }
+    if (hostname.includes('bitbucket.org')) {
+        return `https://bitbucket.org/${owner}/${repo}/get/master.zip`;
+    }
 
-    const { owner, repo } = parseRepoUrl(url);
-
+    // Default to GitHub
     return `https://github.com/${owner}/${repo}/zipball/master`;
-
 }
 
 
@@ -597,4 +638,4 @@ async function clearTempFolder() {
 }
 
 
-module.exports = { fetchRepoAsZip, clearTempFolder }; 
+module.exports = { fetchRepoAsZip, clearTempFolder, stopActiveProcesses }; 

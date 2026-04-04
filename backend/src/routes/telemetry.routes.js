@@ -109,55 +109,57 @@ router.post('/v1/traces', (req, res) => {
             waitingForRealtimeRoot = false; 
             lastIgnoredTraceId = rootCandidate.traceId; 
 
-            try {
-                const result = analyzeFunction(
-                    rootCandidate.name, 
-                    realtimeAnalysisOptions.direction, 
-                    realtimeAnalysisOptions.depth,
-                    rootCandidate.file
-                );
+            // Use setImmediate to avoid blocking the ingestion response
+            setImmediate(() => {
+                try {
+                    const result = analyzeFunction(
+                        rootCandidate.name, 
+                        realtimeAnalysisOptions.direction, 
+                        realtimeAnalysisOptions.depth,
+                        rootCandidate.file
+                    );
 
-                if (result && !result.error) {
-                    console.log(`📊 [Telemetry] Analysis successful. Broadcasting graph...`);
-                    const idMap = new Map();
-                    let counter = 0;
-                    const getNumericId = (id) => {
-                        if (!idMap.has(id)) idMap.set(id, counter++);
-                        return idMap.get(id);
-                    };
+                    if (result && !result.error) {
+                        console.log(`📊 [Telemetry] Analysis successful. Broadcasting graph...`);
+                        const idMap = new Map();
+                        let counter = 0;
+                        const getNumericId = (id) => {
+                            if (!idMap.has(id)) idMap.set(id, counter++);
+                            return idMap.get(id);
+                        };
 
-                    const numericFlow = {
-                        root: "0",
-                        nodes: result.fullGraph.nodes.map(n => ({
-                            ...n,
-                            originalId: n.id,
-                            nodeId: n.nodeId,
-                            id: String(getNumericId(n.id))
-                        })),
-                        edges: result.fullGraph.edges.map(e => ({
-                            from: String(getNumericId(e.from)),
-                            to:   String(getNumericId(e.to))
-                        }))
-                    };
+                        const numericFlow = {
+                            root: "0",
+                            nodes: result.fullGraph.nodes.map(n => ({
+                                ...n,
+                                originalId: n.id,
+                                nodeId: n.nodeId,
+                                id: String(getNumericId(n.id))
+                            })),
+                            edges: result.fullGraph.edges.map(e => ({
+                                from: String(getNumericId(e.from)),
+                                to:   String(getNumericId(e.to))
+                            }))
+                        };
 
-                    sseService.broadcastGraph({
-                        flow: numericFlow,
-                        trace: result.flow,
-                        stats: result.stats,
-                        telemetry: result.telemetry,
-                        meta: result.meta
-                    });
-                } else {
-                    console.error(`❌ [Telemetry] Analysis failed for ${rootCandidate.name}:`, result?.error || "Unknown error");
-                    // 🟢 RECOVERY: If analysis failed, go back to waiting so the user can try another click
-                    waitingForRealtimeRoot = true; 
-                    console.log("🔄 [Telemetry] Re-entering waiting state due to analysis failure.");
+                        sseService.broadcastGraph({
+                            flow: numericFlow,
+                            trace: result.flow,
+                            stats: result.stats,
+                            telemetry: result.telemetry,
+                            meta: result.meta
+                        });
+                    } else {
+                        console.error(`❌ [Telemetry] Analysis failed for ${rootCandidate.name}:`, result?.error || "Unknown error");
+                        // ⛔ Removed auto-re-arm: waitingForRealtimeRoot = true; 
+                        console.log("⏸️ [Telemetry] Analysis failed. Press 'Analyze Next Click' to try again.");
+                    }
+                } catch (analysisErr) {
+                    console.error(`💥 [Telemetry] Analysis crashed for ${rootCandidate.name}:`, analysisErr.message);
+                    // ⛔ Removed auto-re-arm: waitingForRealtimeRoot = true; 
+                    console.log("⏸️ [Telemetry] Analysis crashed. Press 'Analyze Next Click' to try again.");
                 }
-            } catch (analysisErr) {
-                console.error(`💥 [Telemetry] Analysis crashed for ${rootCandidate.name}:`, analysisErr.message);
-                waitingForRealtimeRoot = true; 
-                console.log("🔄 [Telemetry] Re-entering waiting state due to crash.");
-            }
+            });
         }
 
         // WATERFALL SORTING FOR PULSES
@@ -186,6 +188,13 @@ router.post('/v1/traces', (req, res) => {
     }
 });
 
+function resetRealtimeState() {
+    waitingForRealtimeRoot = false;
+    lastIgnoredTraceId = null;
+    console.log("🧹 [Telemetry] Real-time state reset.");
+}
+
 module.exports = router;
 module.exports.enableRealtimeWaiting = enableRealtimeWaiting;
+module.exports.resetRealtimeState = resetRealtimeState;
 

@@ -40,7 +40,7 @@ export default function CodePanel({ node, onClose }) {
     if (!node.code) return;
     setSummarising(true);
     try {
-      const res = await fetch('http://localhost:5000/api/explain-function', {
+      const res = await fetch(`http://${window.location.hostname}:5000/api/explain-function`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: node.code, label: node.label }),

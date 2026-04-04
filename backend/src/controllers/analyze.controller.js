@@ -5,7 +5,7 @@ const telemetryRoutes = require("../routes/telemetry.routes");
 
 exports.analyzeRepo = async (req, res) => {
     try {
-        const { repoUrl, entryFunction, direction, depth } = req.body;
+        const { repoUrl, entryFunction, direction, depth, options } = req.body;
 
         if (!repoUrl) {
             return res.status(400).json({
@@ -23,7 +23,7 @@ exports.analyzeRepo = async (req, res) => {
         
         // 🟢 UPDATE: Only run dynamic tracing if we are in Real-time mode (no entryFunction)
         const isRealtimeMode = !entryFunction;
-        const repoPath = await fetchRepoAsZip(repoUrl, isRealtimeMode); 
+        const repoPath = await fetchRepoAsZip(repoUrl, isRealtimeMode, options); 
         
         // 1. BUILD STEP (Static AST Indexing)
         await index.build(repoPath);
@@ -32,15 +32,12 @@ exports.analyzeRepo = async (req, res) => {
         if (isRealtimeMode) {
             // 🟢 REAL-TIME MODE
             console.log("📡 No entry function provided. Entering Real-time mode.");
-            telemetryRoutes.enableRealtimeWaiting({
-                direction: directionSafe,
-                depth: depthSafe
-            });
+            // ⛔ Removed auto-arming: telemetryRoutes.enableRealtimeWaiting(...)
 
             return res.json({
                 success: true,
                 mode: "realtime",
-                message: "Environment ready. Waiting for user interaction in the target app..."
+                message: "Environment ready. Use 'Analyze Next Click' to start capturing."
             });
         }
 

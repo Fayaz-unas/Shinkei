@@ -114,44 +114,31 @@ function resolveEntry(input) {
 
 
 function findEventHandler(eventName, element) {
+    const eventId = `${eventName}::${element}`;
+    const evt = index.events.get(eventId);
 
-    for (const [relativePath, data] of index.files) {
+    if (!evt) return null;
 
-        for (const evt of (data.events ?? [])) {
+    if (evt.handler && evt.handler !== "inline" && evt.handler !== "conditional" && evt.handler !== "dynamic") {
+        const fnInfo = resolver.findFunction(evt.handler, evt.file);
+        if (fnInfo) return { fnInfo, eventMeta: evt };
+    }
 
-            if (evt.event !== eventName) continue;
-
-            if (element && evt.element !== element) continue;
-
-
-
-            if (evt.handler && evt.handler !== "inline"
-
-&& evt.handler !== "conditional" && evt.handler !==
-
-"dynamic") {
-
-                const fnInfo = resolver.findFunction(evt.handler, relativePath);
-
+    // Fallback for cases where handler is in callsInside (if available in indexed data)
+    // Note: The index currently only stores 'handler'. 
+    // If we need 'callsInside', we still need the file lookup, but it's only one file.
+    if (evt.file) {
+        const fileData = index.files.get(evt.file);
+        const rawEvt = (fileData?.events ?? []).find(e => e.event === eventName && e.element === element);
+        if (rawEvt) {
+            for (const callName of (rawEvt.callsInside ?? [])) {
+                const fnInfo = resolver.findFunction(callName, evt.file);
                 if (fnInfo) return { fnInfo, eventMeta: evt };
-
             }
-
-
-            for (const callName of (evt.callsInside ?? [])) {
-
-                const fnInfo = resolver.findFunction(callName, relativePath);
-
-                if (fnInfo) return { fnInfo, eventMeta: evt };
-
-            }
-
         }
-
     }
 
     return null;
-
 }
 
 

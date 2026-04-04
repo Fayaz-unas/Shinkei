@@ -274,11 +274,7 @@ function getUsedBy(fnId) {
  * @returns {{ id, handler, file, method, path }[]}
  */
 function getRoutesForHandler(handlerName) {
-    const results = [];
-    for (const [, data] of index.routes) {
-        if (data.handler === handlerName) results.push(data);
-    }
-    return results;
+    return index.routesByHandler.get(handlerName) ?? [];
 }
 
 /**
@@ -289,11 +285,7 @@ function getRoutesForHandler(handlerName) {
  * @returns {{ id, handler, file, event, element }[]}
  */
 function getEventsForHandler(handlerId) {
-    const results = [];
-    for (const [, data] of index.events) {
-        if (data.handler === handlerId) results.push(data);
-    }
-    return results;
+    return index.eventsByHandler.get(handlerId) ?? [];
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────

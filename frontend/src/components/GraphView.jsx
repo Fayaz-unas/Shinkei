@@ -63,13 +63,26 @@ function FloatingOrbs() {
   );
 }
 
-export default function GraphView({ isOpen, flow, trace, loading, onBackToWorkspace, onAnalyzeAgain, initialDirection = 'forward', maxSteps = 10, isRealtime = false }) {
+export default function GraphView({ 
+  isOpen, 
+  flow, 
+  trace, 
+  loading, 
+  onBackToWorkspace, 
+  onAnalyzeAgain, 
+  initialDirection = 'forward', 
+  maxSteps = 10, 
+  isRealtime = false,
+  isAutoOpening = false,
+  isAppReady = false,
+  appUrl = ''
+}) {
 
   // ── Telemetry Live Stream Logic ──
   useEffect(() => {
     if (!isOpen) return;
 
-    const eventSource = new EventSource('http://localhost:5000/api/shinkei/v1/stream');
+    const eventSource = new EventSource(`http://${window.location.hostname}:5000/api/shinkei/v1/stream`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -204,7 +217,7 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
                 </button>
 
                 {/* Right: Analyze Again (Real-time only) */}
-                {flow && isRealtime && onAnalyzeAgain && (
+                {isRealtime && onAnalyzeAgain && (
                   <button
                     onClick={onAnalyzeAgain}
                     style={{
@@ -366,7 +379,7 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
           )}
 
           {/* ── Graph content ── */}
-          {(flow || loading) && (
+          {flow && (
             <motion.div
               initial={{ y: 24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -391,15 +404,15 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
             </motion.div>
           )}
 
-          {/* Loading state */}
-          {loading && (
+          {/* Loading state or Ready-to-Arm state */}
+          {(loading || (isRealtime && !flow)) && (
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4 }}
               style={{
                 textAlign: 'center',
-                padding: '100px 24px',
+                padding: flow ? '40px 24px' : '15vh 24px',
                 position: 'relative',
                 zIndex: 2,
               }}
@@ -409,56 +422,75 @@ export default function GraphView({ isOpen, flow, trace, loading, onBackToWorksp
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '20px',
+                width: '100%',
               }}>
-                {/* Layered spinner */}
-                <div style={{ position: 'relative', width: '56px', height: '56px' }}>
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    border: '2px solid rgba(139,92,246,0.08)',
-                    borderTopColor: 'rgba(139,92,246,0.4)',
-                    borderRadius: '50%',
-                    animation: 'spin 1.2s linear infinite',
-                  }} />
-                  <div style={{
-                    position: 'absolute', inset: '6px',
-                    border: '2px solid rgba(99,102,241,0.06)',
-                    borderBottomColor: 'rgba(99,102,241,0.3)',
-                    borderRadius: '50%',
-                    animation: 'spin 0.9s linear infinite reverse',
-                  }} />
-                  <div style={{
-                    position: 'absolute', inset: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Hexagon style={{
-                      width: 16, height: 16,
-                      color: '#7c3aed',
-                      opacity: 0.4,
-                      animation: 'gv-breathe 2s ease-in-out infinite',
+                {/* Layered spinner (only if actually loading/waiting) */}
+                {(loading || isAutoOpening) && (
+                  <div style={{ position: 'relative', width: '56px', height: '56px' }}>
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      border: '2px solid rgba(139,92,246,0.08)',
+                      borderTopColor: 'rgba(139,92,246,0.4)',
+                      borderRadius: '50%',
+                      animation: 'spin 1.2s linear infinite',
                     }} />
+                    <div style={{
+                      position: 'absolute', inset: '6px',
+                      border: '2px solid rgba(99,102,241,0.06)',
+                      borderBottomColor: 'rgba(99,102,241,0.3)',
+                      borderRadius: '50%',
+                      animation: 'spin 0.9s linear infinite reverse',
+                    }} />
+                    <div style={{
+                      position: 'absolute', inset: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Hexagon style={{
+                        width: 16, height: 16,
+                        color: '#7c3aed',
+                        opacity: 0.4,
+                        animation: 'gv-breathe 2s ease-in-out infinite',
+                      }} />
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                )}
+
+                {/* Status Text */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                   <span style={{
                     fontFamily: "'Inter', sans-serif",
                     fontSize: '14px',
                     fontWeight: 600,
                     color: '#cbd5e1',
                     letterSpacing: '-0.01em',
+                    textAlign: 'center',
                   }}>
-                    {isRealtime ? 'Waiting for Interaction' : 'Building call graph'}
+                    {isAutoOpening 
+                      ? 'Preparing Target Environment' 
+                      : loading
+                        ? (isRealtime ? 'Waiting for Interaction' : 'Building call graph')
+                        : isAppReady
+                          ? 'Environment Ready'
+                          : 'Initializing...'}
                   </span>
                   <span style={{
                     fontFamily: "'JetBrains Mono', monospace",
                     fontSize: '12px',
                     color: '#64748b',
                     letterSpacing: '0.04em',
+                    textAlign: 'center',
+                    maxWidth: '400px',
+                    lineHeight: 1.5,
                   }}>
-                    {isRealtime 
-                      ? 'Click any button on the target application to begin tracing…' 
-                      : 'Parsing AST and resolving edges…'}
+                    {isAutoOpening
+                      ? 'Target app will auto-open shortly. Please wait a moment.'
+                      : loading
+                        ? 'Click any button on the target application to begin tracing…' 
+                        : isAppReady
+                          ? `Press 'Analyze Next Click' above to start capturing traces from ${appUrl || 'your application'}.`
+                          : 'Warming up infrastructure...'}
                   </span>
                 </div>
               </div>

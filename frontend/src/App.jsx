@@ -11,27 +11,45 @@ function App() {
   const [trace, setTrace] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isWaitingForRealtime, setIsWaitingForRealtime] = useState(false);
+  const [isAutoOpening, setIsAutoOpening] = useState(false); // 👈 New state for browser trigger
+  const [isAppReady, setIsAppReady] = useState(false); // 👈 Track if target app is likely open
+  const [appUrl, setAppUrl] = useState(''); // 👈 New state for dynamic target URL
   const [isRealtimeSession, setIsRealtimeSession] = useState(false); // 👈 New state
   const [graphDirection, setGraphDirection] = useState('forward');
   const [graphSteps, setGraphSteps] = useState(10);
+  const [currentAnalysisId, setCurrentAnalysisId] = useState(0); // 👈 Track request sequence
 
   const handleOpenWorkspace = () => setView('workspace');
 
-  const handleClose = () => {
+  const handleClose = async () => {
     setView('hero');
+    setCurrentAnalysisId(prev => prev + 1); // 👈 Cancel current logic
+    try {
+      await fetch(`http://${window.location.hostname}:5000/api/analyze/stop`, { method: 'POST' });
+    } catch (e) { console.error("Stop failed", e); }
+    
     setTimeout(() => {
       setFlow(null);
+      setLoading(false); // 👈 Ensure loading is off
       setIsWaitingForRealtime(false);
       setIsRealtimeSession(false);
+      setIsAppReady(false);
     }, 500);
   };
 
-  const handleBackToWorkspace = () => {
+  const handleBackToWorkspace = async () => {
     setView('workspace');
+    setCurrentAnalysisId(prev => prev + 1); // 👈 Cancel current logic
+    try {
+      await fetch(`http://${window.location.hostname}:5000/api/analyze/stop`, { method: 'POST' });
+    } catch (e) { console.error("Stop failed", e); }
+
     setFlow(null);
     setTrace(null);
+    setLoading(false); // 👈 Ensure loading is off
     setIsWaitingForRealtime(false);
     setIsRealtimeSession(false);
+    setIsAppReady(false);
   };
 
   const handleAnalyzeAgain = async () => {
@@ -40,7 +58,7 @@ function App() {
     setIsWaitingForRealtime(true); // Show waiting UI immediately
 
     try {
-      await fetch('http://localhost:5000/api/shinkei/v1/reset', {
+      await fetch(`http://${window.location.hostname}:5000/api/shinkei/v1/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -57,7 +75,7 @@ function App() {
 
   // ── Telemetry & Real-time Graph Listener ──
   useEffect(() => {
-    const eventSource = new EventSource('http://localhost:5000/api/shinkei/v1/stream');
+    const eventSource = new EventSource(`http://${window.location.hostname}:5000/api/shinkei/v1/stream`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -69,6 +87,11 @@ function App() {
           setTrace(data.trace);
           setIsWaitingForRealtime(false);
           setLoading(false);
+        } else if (data.type === 'app_opened') {
+          console.log('🌐 Backend triggered browser opening:', data.url);
+          setAppUrl(data.url || '');
+          setIsAutoOpening(false);
+          setIsAppReady(true);
         }
       } catch (err) {
         console.error("Failed to parse SSE event in App.jsx", err);
@@ -78,21 +101,28 @@ function App() {
     return () => eventSource.close();
   }, []);
 
-  // This function now talks to your actual backend
- const handleAnalyze = async (url, fnText, direction = 'forward', steps = 10) => {
+  const handleAnalyze = async (url, fnText, direction = 'forward', steps = 10, options = null) => {
+  const analysisId = currentAnalysisId; // 👈 Capture current ID
   setFlow(null);
   setTrace(null);
   setLoading(true);
   
   const realtime = !fnText;
-  setIsWaitingForRealtime(realtime);
+  setIsWaitingForRealtime(false); // ⛔ Don't auto-arm. Wait for user to press button.
   setIsRealtimeSession(realtime); // 👈 Persist session mode
   
+  // 🌐 Trigger auto-open countdown message if realtime
+  if (realtime) {
+    setIsAutoOpening(true);
+    setIsAppReady(false);
+    // ⛔ Timeout removed: handling via SSE 'app_opened' event now
+  }
+
   setGraphDirection(direction);
   setGraphSteps(steps);
 
   try {
-    const response = await fetch('http://localhost:5000/api/analyze', { 
+    const response = await fetch(`http://${window.location.hostname}:5000/api/analyze`, { 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -100,10 +130,14 @@ function App() {
         entryFunction: fnText,
         direction: direction,
         depth: steps,
+        options: options // 👈 Added frontendPort / backendPort
       }),
     });
 
     const data = await response.json();
+
+    // 🛑 ABORT if a newer analysis was started while we were waiting
+    if (analysisId !== currentAnalysisId) return;
 
     if (!response.ok || !data.success) {
       console.error('Analysis failed:', data.error);
@@ -112,6 +146,7 @@ function App() {
       setLoading(false);
       setIsWaitingForRealtime(false);
       setIsRealtimeSession(false);
+      setIsAutoOpening(false);
     } else {
       if (data.mode === 'static') {
         setFlow(data.flow);
@@ -125,14 +160,18 @@ function App() {
     }
 
   } catch (err) {
+    if (analysisId !== currentAnalysisId) return;
     console.error('Network error:', err);
     setFlow(null);
     setTrace(null);
     setLoading(false);
     setIsWaitingForRealtime(false);
     setIsRealtimeSession(false);
+    setIsAutoOpening(false);
   } finally {
-    setView('graph');
+    if (analysisId === currentAnalysisId) {
+      setView('graph');
+    }
   }
 };
 
@@ -165,6 +204,9 @@ function App() {
         initialDirection={graphDirection}
         maxSteps={graphSteps}
         isRealtime={isRealtimeSession}
+        isAutoOpening={isAutoOpening}
+        isAppReady={isAppReady}
+        appUrl={appUrl}
       />
     </>
   );

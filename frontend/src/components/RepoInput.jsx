@@ -12,8 +12,17 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
     if (!url.trim()) { setError('Please enter a GitHub repository URL.'); return; }
     if (!isRealtime && !fnText.trim()) { setError('Please enter a function or action to analyse.'); return; }
     setError('');
-    const stepsNum = Math.max(1, Math.min(100, Number(steps) || 10));
-    onAnalyze(url, isRealtime ? null : fnText, direction, stepsNum);
+    
+    // Use states for Static mode, or defaults for Real-time
+    const finalDirection = isRealtime ? 'forward' : direction;
+    const stepsNum = isRealtime ? 10 : Math.max(1, Math.min(100, Number(steps) || 10));
+
+    const options = isRealtime ? {
+      frontendPort: 3000,
+      backendPort: 8000
+    } : null;
+
+    onAnalyze(url, isRealtime ? null : fnText, finalDirection, stepsNum, options);
   };
 
   return (
@@ -75,7 +84,7 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
         />
       </div>
 
-      {/* Function / action */}
+      {/* Static-only Fields */}
       {!isRealtime && (
         <>
           <label className="field-label" style={{ marginTop: 14 }}>
@@ -91,53 +100,52 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
               onKeyDown={e => e.key === 'Enter' && handleSubmit()}
             />
           </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: 14, alignItems: 'stretch' }}>
+            {/* Direction toggle */}
+            <div style={{ flex: 1 }}>
+              <label className="field-label">Flow Direction</label>
+              <div className="direction-toggle">
+                <button
+                  type="button"
+                  className={`direction-option ${direction === 'forward' ? 'active' : ''}`}
+                  onClick={() => setDirection('forward')}
+                >
+                  Forward →
+                </button>
+                <button
+                  type="button"
+                  className={`direction-option ${direction === 'backward' ? 'active' : ''}`}
+                  onClick={() => setDirection('backward')}
+                >
+                  ← Backward
+                </button>
+              </div>
+            </div>
+
+            {/* Steps input */}
+            <div style={{ width: '120px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+              <label className="field-label">Steps</label>
+              <div className="input-row" style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="repo-input"
+                  placeholder="10"
+                  value={steps}
+                  onChange={e => setSteps(e.target.value.replace(/[^0-9]/g, ''))}
+                  onBlur={() => {
+                    const n = Math.max(1, Math.min(100, Number(steps) || 1));
+                    setSteps(String(n));
+                  }}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                  style={{ textAlign: 'center', width: '100%' }}
+                />
+              </div>
+            </div>
+          </div>
         </>
       )}
-
-      {/* Direction + Steps row */}
-      <div style={{ display: 'flex', gap: '12px', marginTop: 14, alignItems: 'stretch' }}>
-        {/* Direction toggle */}
-        <div style={{ flex: 1 }}>
-          <label className="field-label">Flow Direction</label>
-          <div className="direction-toggle">
-            <button
-              type="button"
-              className={`direction-option ${direction === 'forward' ? 'active' : ''}`}
-              onClick={() => setDirection('forward')}
-            >
-              Forward →
-            </button>
-            <button
-              type="button"
-              className={`direction-option ${direction === 'backward' ? 'active' : ''}`}
-              onClick={() => setDirection('backward')}
-            >
-              ← Backward
-            </button>
-          </div>
-        </div>
-
-        {/* Steps input */}
-        <div style={{ width: '120px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
-          <label className="field-label">Steps</label>
-          <div className="input-row" style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
-            <input
-              type="text"
-              inputMode="numeric"
-              className="repo-input"
-              placeholder="10"
-              value={steps}
-              onChange={e => setSteps(e.target.value.replace(/[^0-9]/g, ''))}
-              onBlur={() => {
-                const n = Math.max(1, Math.min(100, Number(steps) || 1));
-                setSteps(String(n));
-              }}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              style={{ textAlign: 'center', width: '100%' }}
-            />
-          </div>
-        </div>
-      </div>
 
       {error && <p className="input-error">{error}</p>}
 
@@ -162,4 +170,3 @@ export default function RepoInput({ onAnalyze, loading, analyzed }) {
     </div>
   );
 }
-

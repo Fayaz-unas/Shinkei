@@ -5,7 +5,7 @@ export const NH          = 70;
 export const HGAP        = 40;
 export const VGAP        = 72;
 export const PAD         = 56;
-export const LEVEL_DELAY = 550;
+export const LEVEL_DELAY = 80;
 
 // ── Build forward graph (root → children) ──────────────────────────────────
 export function buildForwardLayout(nodes, edges, rootId, maxSteps = Infinity) {
