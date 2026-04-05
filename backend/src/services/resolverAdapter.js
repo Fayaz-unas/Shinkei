@@ -127,7 +127,7 @@ function findFunction(name, callerFile = null) {
     }
 
     // 2. Short-name fallback: "build" → finds "GlobalIndex.build"
-    // calls_extractor produces bare method name; functions_extractor stores qualified.
+    // callsExtractor produces bare method name; functionsExtractor stores qualified.
     const dotSuffix = `.${name}`;
     const qualified = [];
     for (const [, fn] of index.functionsById) {

@@ -116,7 +116,7 @@ class IndexBuilder {
         this._reset();
 
         // Invalidate code cache — new repo or re-scan means files may have changed
-        try { require("./code_service").clearCache(); } catch (_) { /* optional dep */ }
+        try { require("./codeService").clearCache(); } catch (_) { /* optional dep */ }
 
         // 1. Grab all files in the repo
         const allAbsolutePaths = getAllFiles(repoPath);

@@ -17,11 +17,11 @@ const { createCollector } = require("./collector");
 
 // ─── Extractor registry ───────────────────────────────────────────────────────
 // We will uncomment these as we rewrite them to use TypeScript.
-const functionsExtractor = require("../extractors/functions_extractor");
-const callsExtractor     = require("../extractors/calls_extractor");
-const apiCallsExtractor  = require("../extractors/apiCalls_extractor");
-const routesExtractor    = require("../extractors/routes_extractor");
-const eventsExtractor    = require("../extractors/events_extractor");
+const functionsExtractor = require("../extractors/functionsExtractor");
+const callsExtractor     = require("../extractors/callsExtractor");
+const apiCallsExtractor  = require("../extractors/apiCallsExtractor");
+const routesExtractor    = require("../extractors/routesExtractor");
+const eventsExtractor    = require("../extractors/eventsExtractor");
 
 // Notice: STAGE_1 (imports_extractor) is completely gone. 
 // TypeScript resolves all imports natively during createProgram.

@@ -157,8 +157,7 @@ Question: ${question}`;
 
 // ─── Fallback ─────────────────────────────────────────────────────────────────
 const FALLBACK = {
-    summary: "Explanation unavailable",
-    details: "Could not generate an explanation for this function.",
+    explanation: "Explanation unavailable",
     steps:   [],
 };
 

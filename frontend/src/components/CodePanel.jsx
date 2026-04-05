@@ -2,7 +2,7 @@
 import { X, FileCode2, Copy, Check, Sparkles, Code2, Hash } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { TYPE_COLOR, TYPE_LABEL } from '../constants/nodeTypes';
-import { highlight } from '../utils/syntaxHighlight';
+import { highlight } from '../utils/SyntaxHighlight';
 import { useTypingAnimation } from '../hooks/useTypingAnimation';
 import SummaryView from './SummaryView';
 

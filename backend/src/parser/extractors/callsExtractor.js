@@ -1,5 +1,5 @@
 /**
- * calls_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * callsExtractor.js (TypeScript Compiler API Version - Production Ready)
  * * ✅ No more custom import maps or instance maps! TS resolves this natively.
  * ✅ calleeFunctionId is now 100% accurate across files using TypeChecker symbols.
  * ✅ Exact startLine/endLine everywhere.
