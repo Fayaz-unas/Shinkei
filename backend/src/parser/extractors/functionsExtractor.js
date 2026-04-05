@@ -1,5 +1,5 @@
 /**
- * functions_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * functionsExtractor.js (TypeScript Compiler API Version - Production Ready)
  */
 
 const ts = require("typescript");

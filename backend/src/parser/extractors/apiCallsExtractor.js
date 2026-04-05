@@ -1,5 +1,5 @@
 /**
- * apiCalls_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * apiCallsExtractor.js (TypeScript Compiler API Version - Production Ready)
  * * ✅ Recursively tracks calling functions (no more walking up the AST)
  * ✅ axios("/url") shorthand detected
  * ✅ axios.create({ baseURL }) tracked — baseURL merged into child call URLs

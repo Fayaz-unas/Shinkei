@@ -1,9 +1,10 @@
 const express = require("express");
 const cors = require("./config/cors");
+const errorHandler = require("./middlewares/errorHandler");
 
-const analyzeRoutes = require("./routes/analyze.routes");
-const explainRoutes = require("./routes/code.explain.routes");
-const telemetryRoutes = require("./routes/telemetry.routes"); // Renamed for clarity
+const analyzeRoutes = require("./routes/analyzeRoutes");
+const codeExplainRoutes = require("./routes/codeExplainRoutes");
+const telemetryRoutes = require("./routes/telemetryRoutes");
 
 const app = express();
 
@@ -14,10 +15,12 @@ app.use(express.json({ limit: '5mb' }));
 
 // 👉 API routes
 app.use("/api/analyze", analyzeRoutes);
-app.use("/api", explainRoutes);
+app.use("/api", codeExplainRoutes);
 
 // 👉 Shinkei Telemetry Ingest
-// This matches your tracing.js config: http://localhost:PORT/api/shinkei/v1/traces
 app.use("/api/shinkei", telemetryRoutes);
+
+// 👉 Global Error Handler
+app.use(errorHandler);
 
 module.exports = app;

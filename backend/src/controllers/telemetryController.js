@@ -1,5 +1,3 @@
-const express = require('express');
-const router = express.Router();
 const dynamicStore = require('../services/dynamicStore');
 const sseService = require('../services/sseService');
 const { analyzeFunction } = require('../services/queryEngine');
@@ -9,30 +7,33 @@ let waitingForRealtimeRoot = false;
 let lastIgnoredTraceId = null; // 👈 Prevent immediate re-trigger from same trace
 let realtimeAnalysisOptions = { direction: 'forward', depth: 8 };
 
-function enableRealtimeWaiting(options = {}) {
+const enableRealtimeWaiting = (options = {}) => {
     waitingForRealtimeRoot = true;
     realtimeAnalysisOptions = {
         direction: options.direction || 'forward',
         depth: parseInt(options.depth) || 8
     };
     console.log(`📡 Real-time mode: Waiting for next interaction (Direction: ${realtimeAnalysisOptions.direction}, Depth: ${realtimeAnalysisOptions.depth})...`);
-}
+};
 
-// ─── 📡 RESET ENDPOINT ────────────────────────────────────────────────
-router.post('/v1/reset', (req, res) => {
+const resetRealtimeState = () => {
+    waitingForRealtimeRoot = false;
+    lastIgnoredTraceId = null;
+    console.log("🧹 [Telemetry] Real-time state reset.");
+};
+
+const reset = (req, res) => {
     console.log("♻️ [Telemetry] Manual reset requested. Clearing filters.");
     lastIgnoredTraceId = null; // 👈 Clear on manual reset
     enableRealtimeWaiting(req.body);
     res.json({ success: true, message: "Ready for next interaction." });
-});
+};
 
-// ─── 📡 SSE ENDPOINT ──────────────────────────────────────────────────
-router.get('/v1/stream', (req, res) => {
+const stream = (req, res) => {
     sseService.addClient(req, res);
-});
+};
 
-// ─── 📥 INGESTION & WATERFALL ENGINE ──────────────────────────────────
-router.post('/v1/traces', (req, res) => {
+const ingestTraces = (req, res) => {
     try {
         const resourceSpans = req.body.resourceSpans || [];
         let spanCount = 0;
@@ -186,15 +187,12 @@ router.post('/v1/traces', (req, res) => {
         console.error('❌ [Telemetry] Error:', err.message);
         res.status(500).send('Ingestion error');
     }
-});
+};
 
-function resetRealtimeState() {
-    waitingForRealtimeRoot = false;
-    lastIgnoredTraceId = null;
-    console.log("🧹 [Telemetry] Real-time state reset.");
-}
-
-module.exports = router;
-module.exports.enableRealtimeWaiting = enableRealtimeWaiting;
-module.exports.resetRealtimeState = resetRealtimeState;
-
+module.exports = {
+    reset,
+    stream,
+    ingestTraces,
+    enableRealtimeWaiting,
+    resetRealtimeState
+};

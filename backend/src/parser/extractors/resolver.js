@@ -134,7 +134,7 @@ function resolveFunction(calleeFunctionId, functionMaps) {
 
     const nameMap = functionMaps.byFileAndName.get(filePath);
     if (nameMap) {
-        // Exact name match (covers "ClassName.method" as stored by functions_extractor)
+        // Exact name match (covers "ClassName.method" as stored by functionsExtractor)
         const direct = nameMap.get(name);
         if (direct) return direct;
 
