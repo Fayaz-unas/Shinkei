@@ -5,6 +5,7 @@ const errorHandler = require("./middlewares/errorHandler");
 const analyzeRoutes = require("./routes/analyzeRoutes");
 const codeExplainRoutes = require("./routes/codeExplainRoutes");
 const telemetryRoutes = require("./routes/telemetryRoutes");
+const editorRoutes = require("./routes/editor.routes");
 
 const app = express();
 
