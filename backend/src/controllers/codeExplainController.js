@@ -1,4 +1,4 @@
-const { explainFunction,askGemini } = require("../services/code_explain");
+const { explainFunction,askGemini } = require("../services/codeExplainService");
 
 /**
  * explain_controller.js

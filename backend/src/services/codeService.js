@@ -4,7 +4,7 @@ const path = require("path");
 const { index } = require("./indexBuilder");
 
 /**
- * code_service.js
+ * codeService.js
  *
  * Responsibility: Attach raw source code to graph nodes.
  *

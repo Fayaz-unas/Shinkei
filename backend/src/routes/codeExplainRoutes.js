@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const { explainFunction ,askGemini} = require("../controllers/code.explain.controller");
+const { explainFunction ,askGemini} = require("../controllers/codeExplainController");
 
 // This handles POST /api/explain-function
 router.post("/explain-function", explainFunction);

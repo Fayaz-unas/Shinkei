@@ -1,7 +1,8 @@
-const { fetchRepoAsZip } = require("../utils/githubZipHandler");
+const { fetchRepoAsZip, stopActiveProcesses, clearTempFolder } = require("../utils/githubZipHandler");
 const { index } = require("../services/indexBuilder"); 
 const { analyzeFunction } = require("../services/queryEngine");
-const telemetryRoutes = require("../routes/telemetry.routes");
+const dynamicStore = require("../services/dynamicStore");
+const { resetRealtimeState } = require("./telemetryController");
 
 exports.analyzeRepo = async (req, res) => {
     try {
@@ -100,6 +101,19 @@ exports.analyzeRepo = async (req, res) => {
             success: false,
             error: "Failed to analyze repo: " + err.message,
         });
+    }
+};
+
+exports.stopAnalysis = async (req, res) => {
+    try {
+        await stopActiveProcesses();
+        await clearTempFolder();
+        dynamicStore.reset();
+        resetRealtimeState();
+        index._reset(); 
+        res.json({ success: true, message: "Analysis stopped and environment cleared." });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 };
 

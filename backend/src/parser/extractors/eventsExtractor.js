@@ -1,5 +1,5 @@
 /**
- * events_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * eventsExtractor.js (TypeScript Compiler API Version - Production Ready)
  * * ✅ Top-down React component tracking (no more walking up the AST).
  * ✅ handlerFunctionId perfectly resolved via TypeChecker.
  * ✅ "inline" multi-call arrows preserved and deeply extracted.

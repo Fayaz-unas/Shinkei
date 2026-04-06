@@ -14,7 +14,7 @@
 
  * → graphTraversal (walk with fnInfo objects, keyed on IDs)
 
- * → code_service (attach source code to every graph node)
+ * → codeService (attach source code to every graph node)
 
  * → filters (clean flow)
 
@@ -35,7 +35,7 @@ const { filterFlow }                            = require("./filters");
 
 const { buildForwardStats, buildBackwardStats } = require("./statsBuilder");
 
-const { attachCodeToNodes, extractCode }        = require("./code_service");
+const { attachCodeToNodes, extractCode }        = require("./codeService");
 
 const { index }                                 = require("./indexBuilder");
 

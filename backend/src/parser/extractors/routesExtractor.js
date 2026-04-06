@@ -1,5 +1,5 @@
 /**
- * routes_extractor.js (TypeScript Compiler API Version - Production Ready)
+ * routesExtractor.js (TypeScript Compiler API Version - Production Ready)
  * * ✅ Dedup key is filePath-scoped (no cross-file collisions).
  * ✅ app.use("/api", router) base-path merging handled via TS AST traversal.
  * ✅ Next.js App/Pages router support included natively.
