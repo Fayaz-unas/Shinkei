@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Save, Code2, Monitor, MousePointer2, RefreshCcw, Check, AlertCircle, Search, Zap } from 'lucide-react';
+import { ArrowLeft, Save, Code2, Monitor, MousePointer2, RefreshCcw, Check, AlertCircle, Search, Zap, Hash } from 'lucide-react';
 import { highlight } from '../utils/SyntaxHighlight';
 
 export default function UIEditorView({ 
@@ -20,29 +20,92 @@ export default function UIEditorView({
   const [snippetStartLine, setSnippetStartLine] = useState(1); // 👈 Track where snippet starts
   const [activeRange, setActiveRange] = useState(null); // 👈 Store snippet boundaries
   const [isInspectMode, setIsInspectMode] = useState(false);
-  const [isDesignMode, setIsDesignMode] = useState(true); // Default to design-focused
   const [showReadyToast, setShowReadyToast] = useState(false);
   const [scrollTop, setScrollTop] = useState(0); // 👈 Track scroll position
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [editorWidth, setEditorWidth] = useState(500);
+  const [isResizing, setIsResizing] = useState(false);
   const iframeRef = useRef(null);
   const textareaRef = useRef(null);
+  const pendingWidthRef = useRef(500);
+  const resizeRafRef = useRef(null);
 
   const handleScroll = (e) => {
     setScrollTop(e.target.scrollTop);
+    setScrollLeft(e.target.scrollLeft);
   };
 
+  const codeLines = fileContent.split('\n');
+  const currentFileName = selectedFile ? selectedFile.split(/[/\\]/).pop() : '';
+
+  useEffect(() => {
+    const MIN_EDITOR_WIDTH = 360;
+    const MIN_IFRAME_WIDTH = 320;
+
+    const handleMouseMove = (event) => {
+      if (!isResizing) return;
+      const nextWidth = window.innerWidth - event.clientX;
+      const maxEditorWidth = Math.max(MIN_EDITOR_WIDTH, window.innerWidth - MIN_IFRAME_WIDTH);
+      const clampedWidth = Math.max(MIN_EDITOR_WIDTH, Math.min(maxEditorWidth, nextWidth));
+      pendingWidthRef.current = clampedWidth;
+
+      if (resizeRafRef.current === null) {
+        resizeRafRef.current = window.requestAnimationFrame(() => {
+          setEditorWidth(pendingWidthRef.current);
+          resizeRafRef.current = null;
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isResizing) {
+        setEditorWidth(pendingWidthRef.current);
+        setIsResizing(false);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (isResizing) {
+        setEditorWidth(pendingWidthRef.current);
+        setIsResizing(false);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('blur', handleWindowBlur);
+    if (isResizing) {
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      if (resizeRafRef.current !== null) {
+        window.cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
+    };
+  }, [isResizing]);
+
   // ── Relative line for highlight ──
-  const relativeLine = isDesignMode ? (line - snippetStartLine + 1) : line;
+  const relativeLine = line - snippetStartLine + 1;
+  const activeLineIndex = line ? Math.max(0, relativeLine - 1) : -1;
 
   // ── Auto-scroll to selected line ──
   useEffect(() => {
     if (textareaRef.current && line) {
       const lineHeight = 1.6 * 13;
-      const scrollLine = isDesignMode ? relativeLine : line;
+      const scrollLine = relativeLine;
       const scrollTop = (scrollLine - 1) * lineHeight;
       textareaRef.current.scrollTo({ top: Math.max(0, scrollTop - 100), behavior: 'smooth' });
       textareaRef.current.focus();
     }
-  }, [line, fileContent, isDesignMode, relativeLine]);
+  }, [line, fileContent, relativeLine]);
 
   useEffect(() => {
     if (isAppReady && isOpen) {
@@ -90,7 +153,7 @@ export default function UIEditorView({
     setLine(hasValidLine ? parsedLine : null);
     try {
       // 🎯 Request specific line to get design snippet
-      const url = `http://${window.location.hostname}:5000/api/editor/read?file=${encodeURIComponent(filePath)}${isDesignMode && hasValidLine ? `&line=${parsedLine}` : ''}`;
+      const url = `http://${window.location.hostname}:5000/api/editor/read?file=${encodeURIComponent(filePath)}${hasValidLine ? `&line=${parsedLine}` : ''}`;
       const res = await fetch(url);
       if (!res.ok) {
         throw new Error(`Read failed with status ${res.status}`);
@@ -286,7 +349,7 @@ export default function UIEditorView({
           <iframe
             ref={iframeRef}
             src={appUrl}
-            style={{ width: '100%', height: '100%', border: 'none' }}
+            style={{ width: '100%', height: '100%', border: 'none', pointerEvents: isResizing ? 'none' : 'auto' }}
             title="Target Website"
           />
         </div>
@@ -300,43 +363,112 @@ export default function UIEditorView({
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               style={{
-                width: '500px',
-                background: '#0f0a1e',
-                borderLeft: '1px solid rgba(139,92,246,0.2)',
+                width: `${editorWidth}px`,
+                background: 'linear-gradient(180deg, rgba(17,12,34,0.78) 0%, rgba(13,10,28,0.72) 100%)',
+                backdropFilter: 'blur(14px) saturate(1.2)',
+                WebkitBackdropFilter: 'blur(14px) saturate(1.2)',
+                borderLeft: '1px solid rgba(139,92,246,0.16)',
                 display: 'flex',
                 flexDirection: 'column',
                 boxShadow: '-20px 0 40px rgba(0,0,0,0.5)',
+                fontFamily: "'JetBrains Mono', monospace",
+                position: 'relative',
               }}
             >
+              <div
+                onMouseDown={() => {
+                  pendingWidthRef.current = editorWidth;
+                  setIsResizing(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  left: -4,
+                  top: 0,
+                  bottom: 0,
+                  width: 8,
+                  cursor: 'col-resize',
+                  zIndex: 20,
+                  background: isResizing ? 'rgba(124,58,237,0.25)' : 'transparent',
+                }}
+                title="Drag to resize"
+              />
+
               <div style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid rgba(139,92,246,0.1)',
+                padding: '18px 18px 14px',
+                borderBottom: '1px solid rgba(139,92,246,0.08)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
+                background: 'rgba(26,16,53,0.4)',
+                position: 'relative',
               }}>
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: '10%',
+                  right: '10%',
+                  height: '1px',
+                  background: 'linear-gradient(90deg, transparent, rgba(124,58,237,0.35), transparent)',
+                }} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div 
-                      onClick={() => setIsDesignMode(!isDesignMode)}
-                      style={{ 
-                        display: 'flex', alignItems: 'center', gap: '6px', 
-                        cursor: 'pointer', background: isDesignMode ? 'rgba(167,139,250,0.1)' : 'transparent',
-                        padding: '4px 10px', borderRadius: '6px', border: `1px solid ${isDesignMode ? 'rgba(167,139,250,0.3)' : 'transparent'}`
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      onClick={() => setSelectedFile(null)}
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(71,85,105,0.15)',
+                        borderRadius: 8,
+                        color: '#475569',
+                        cursor: 'pointer',
+                        padding: '6px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        transition: 'all 0.25s cubic-bezier(0.22,1,0.36,1)',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.color = '#f87171';
+                        e.currentTarget.style.borderColor = 'rgba(248,113,113,0.2)';
+                        e.currentTarget.style.background = 'rgba(248,113,113,0.06)';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.color = '#475569';
+                        e.currentTarget.style.borderColor = 'rgba(71,85,105,0.15)';
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
                       }}
                     >
-                      <Zap style={{ width: 14, height: 14, color: isDesignMode ? '#a78bfa' : '#64748b' }} />
-                      <span style={{ color: isDesignMode ? '#e2e8f0' : '#64748b', fontSize: '12px', fontWeight: 600 }}>Design Mode</span>
-                    </div>
+                      <ArrowLeft style={{ width: 14, height: 14 }} />
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => setSelectedFile(null)}
-                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
-                  >✕</button>
                 </div>
-                <div style={{ fontSize: '11px', color: '#64748b', wordBreak: 'break-all', fontFamily: 'monospace' }}>
-                  {selectedFile.split('/').pop()} {line && `(Line ${line})`}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#64748b', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                  <Code2 style={{ width: 13, height: 13, color: '#a78bfa', opacity: 0.7 }} />
+                  <span style={{ color: '#94a3b8' }}>{currentFileName}</span>
+                  <span style={{ color: '#334155' }}>·</span>
+                  <span style={{ color: '#475569', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <Hash style={{ width: 10, height: 10, opacity: 0.6 }} />
+                    {line ?? '—'}
+                  </span>
                 </div>
+              </div>
+
+              <div style={{
+                padding: '9px 18px',
+                background: 'rgba(26,16,53,0.35)',
+                borderBottom: '1px solid rgba(139,92,246,0.06)',
+                fontSize: 11,
+                color: '#64748b',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}>
+                <Code2 style={{ width: 13, height: 13, color: '#a78bfa', opacity: 0.8 }} />
+                <span style={{ color: '#94a3b8' }}>{selectedFile}</span>
+                <span style={{ color: '#334155' }}>·</span>
+                <span style={{ color: '#475569', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <Hash style={{ width: 10, height: 10, opacity: 0.6 }} />
+                  {line ?? '—'}
+                </span>
               </div>
 
               <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
@@ -345,42 +477,109 @@ export default function UIEditorView({
                     <RefreshCcw style={{ width: 24, height: 24, color: '#7c3aed', animation: 'spin 1s linear infinite' }} />
                   </div>
                 ) : (
-                  <div style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
-                    {/* Active line highlight background */}
-                    {line && (
+                  <div style={{ height: '100%', position: 'relative', overflow: 'hidden', background: 'rgba(12,10,24,0.18)' }}>
+                    <div style={{ minWidth: 'max-content', height: '100%', overflow: 'hidden' }}>
                       <div style={{
-                        position: 'absolute',
-                        top: 20 + (relativeLine - 1) * (1.6 * 13) - scrollTop, // 👈 Account for scroll!
-                        left: 0, right: 0, height: 1.6 * 13,
-                        background: 'rgba(124,58,237,0.25)', 
-                        borderLeft: '4px solid #7c3aed', 
-                        pointerEvents: 'none',
-                        zIndex: 0,
-                      }} />
-                    )}
-                    <textarea
-                      ref={textareaRef}
-                      value={fileContent}
-                      onChange={(e) => setFileContent(e.target.value)}
-                      onScroll={handleScroll} // 👈 Sync scroll
-                      spellCheck={false}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        background: 'transparent',
-                        color: isDesignMode ? '#94a3b8' : '#cbd5e1', 
-                        border: 'none',
-                        outline: 'none',
-                        padding: '20px',
-                        fontFamily: '"JetBrains Mono", monospace',
-                        fontSize: '13px',
-                        lineHeight: '1.6',
-                        resize: 'none',
-                        position: 'relative',
-                        zIndex: 1,
-                        caretColor: '#7c3aed',
-                      }}
-                    />
+                        display: 'grid',
+                        gridTemplateColumns: '44px minmax(0, 1fr)',
+                        alignItems: 'stretch',
+                        minHeight: '100%',
+                        background: 'rgba(12,10,24,0.18)',
+                      }}>
+                        <div style={{
+                          fontSize: 11,
+                          color: '#475569',
+                          lineHeight: '1.7',
+                          paddingRight: 12,
+                          paddingLeft: 8,
+                          userSelect: 'none',
+                          textAlign: 'right',
+                          position: 'sticky',
+                          left: 0,
+                          zIndex: 1,
+                          background: 'rgba(26,16,53,0.3)',
+                          borderRight: '1px solid rgba(139,92,246,0.06)',
+                          overflow: 'hidden',
+                        }}>
+                          <div style={{ transform: `translateY(-${scrollTop}px)` }}>
+                            {codeLines.map((_, index) => (
+                              <div
+                                key={index}
+                                style={{
+                                  height: '1.7em',
+                                  color: index === activeLineIndex ? '#c4b5fd' : '#475569',
+                                  background: index === activeLineIndex ? 'rgba(124,58,237,0.14)' : 'transparent',
+                                  borderRight: index === activeLineIndex ? '2px solid rgba(124,58,237,0.65)' : '2px solid transparent',
+                                  transition: 'background 0.12s, color 0.12s',
+                                }}
+                              >
+                                {snippetStartLine + index}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div style={{ position: 'relative', minHeight: '100%', height: '100%' }}>
+                          <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            padding: '0 20px 0 18px',
+                            color: '#e2e8f0',
+                            fontSize: '13px',
+                            lineHeight: '1.7',
+                            fontFamily: '"JetBrains Mono", monospace',
+                            pointerEvents: 'none',
+                            whiteSpace: 'pre',
+                            overflow: 'visible',
+                            transform: `translate(${-scrollLeft}px, ${-scrollTop}px)`,
+                            minWidth: 'max-content',
+                          }}>
+                            {codeLines.map((lineText, index) => (
+                              <div
+                                key={index}
+                                style={{
+                                  height: '1.7em',
+                                  width: 'max-content',
+                                  background: index === activeLineIndex ? 'rgba(124,58,237,0.22)' : 'transparent',
+                                  borderLeft: index === activeLineIndex ? '3px solid #7c3aed' : '3px solid transparent',
+                                  paddingLeft: index === activeLineIndex ? 6 : 0,
+                                  transition: 'background 0.12s',
+                                }}
+                              >
+                                {highlight(lineText)}
+                              </div>
+                            ))}
+                          </div>
+                          <textarea
+                            ref={textareaRef}
+                            value={fileContent}
+                            onChange={(e) => setFileContent(e.target.value)}
+                            onScroll={handleScroll}
+                            spellCheck={false}
+                            wrap="off"
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              background: 'transparent',
+                              color: 'transparent',
+                              border: 'none',
+                              outline: 'none',
+                              padding: '0 20px 0 18px',
+                              fontFamily: '"JetBrains Mono", monospace',
+                              fontSize: '13px',
+                              lineHeight: '1.7',
+                              resize: 'none',
+                              position: 'relative',
+                              zIndex: 1,
+                              caretColor: '#7c3aed',
+                              whiteSpace: 'pre',
+                              overflow: 'auto',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
