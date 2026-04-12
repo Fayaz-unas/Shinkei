@@ -5,7 +5,7 @@ const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http')
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({
-    url: 'http://localhost:5000/api/shinkei/v1/traces',
+    url: '{{SHINKEI_BACKEND_URL}}/api/shinkei/v1/traces',
   }),
   instrumentations: [
     getNodeAutoInstrumentations({

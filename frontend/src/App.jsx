@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from './config';
 
 import HeroView from './components/HeroView';
 import WorkspaceModal from './components/WorkspaceModal';
@@ -28,7 +29,7 @@ function App() {
     setView('hero');
     setCurrentAnalysisId(prev => prev + 1); // 👈 Cancel current logic
     try {
-      await fetch(`http://${window.location.hostname}:5000/api/analyze/stop`, { method: 'POST' });
+      await fetch(`${API_BASE_URL}/api/analyze/stop`, { method: 'POST' });
     } catch (e) { console.error("Stop failed", e); }
     
     setTimeout(() => {
@@ -45,7 +46,7 @@ function App() {
     setView('workspace');
     setCurrentAnalysisId(prev => prev + 1); // 👈 Cancel current logic
     try {
-      await fetch(`http://${window.location.hostname}:5000/api/analyze/stop`, { method: 'POST' });
+      await fetch(`${API_BASE_URL}/api/analyze/stop`, { method: 'POST' });
     } catch (e) { console.error("Stop failed", e); }
 
     setFlow(null);
@@ -63,7 +64,7 @@ function App() {
     setIsWaitingForRealtime(true); // Show waiting UI immediately
 
     try {
-      await fetch(`http://${window.location.hostname}:5000/api/shinkei/v1/reset`, {
+      await fetch(`${API_BASE_URL}/api/shinkei/v1/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -80,7 +81,7 @@ function App() {
 
   // ── Telemetry & Real-time Graph Listener ──
   useEffect(() => {
-    const eventSource = new EventSource(`http://${window.location.hostname}:5000/api/shinkei/v1/stream`);
+    const eventSource = new EventSource(`${API_BASE_URL}/api/shinkei/v1/stream`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -129,7 +130,7 @@ function App() {
   setGraphSteps(steps);
 
   try {
-    const response = await fetch(`http://${window.location.hostname}:5000/api/analyze`, { 
+    const response = await fetch(`${API_BASE_URL}/api/analyze`, { 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

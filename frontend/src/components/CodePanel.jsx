@@ -61,7 +61,7 @@ export default function CodePanel({ node, onClose }) {
     setShowSummary(true);
     setSummarising(true);
     try {
-      const res = await fetch(`http://${window.location.hostname}:5000/api/explain-function`, {
+      const res = await fetch(`${API_BASE_URL}/api/explain-function`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: node.code, label: node.label }),

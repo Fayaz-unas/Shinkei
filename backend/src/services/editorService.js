@@ -3,8 +3,6 @@ const fs = require('fs-extra');
 const path = require('path');
 const parser = require('@babel/parser');
 const traverse = require('@babel/traverse').default;
-const generate = require('@babel/generator').default;
-const t = require('@babel/types');
 
 exports.readTargetFile = async (filePath) => {
     try {

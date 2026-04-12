@@ -361,8 +361,12 @@ async function runDynamicEnvironment(repoRoot, options = {}) {
         await fs.writeJson(path.join(repoRoot, "ast_map.json"), astMap, { spaces: 2 });
         console.log(`🧭 [Shinkei] Generated ast_map.json with ${Object.keys(astMap).length} function entries.`);
 
+        const SHINKEI_PORT = process.env.PORT || 5000;
+        const SHINKEI_URL = `http://localhost:${SHINKEI_PORT}`;
+
         // --- 1. INJECT OTEL TRACING ---
-        await fs.writeFile(path.join(repoRoot, "tracing.js"), TRACING_CODE);
+        const finalTracingCode = TRACING_CODE.replace('{{SHINKEI_BACKEND_URL}}', SHINKEI_URL);
+        await fs.writeFile(path.join(repoRoot, "tracing.js"), finalTracingCode);
         await fs.writeFile(path.join(repoRoot, "requireHook.js"), REQUIRE_HOOK_CODE);
 
         // --- 2. PREPARE BABEL CONFIG ---

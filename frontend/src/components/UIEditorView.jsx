@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Save, Code2, Monitor, MousePointer2, RefreshCcw, Check, AlertCircle, Search, Zap, Hash } from 'lucide-react';
 import { highlight } from '../utils/SyntaxHighlight';
+import { API_BASE_URL } from '../config';
 
 export default function UIEditorView({ 
   isOpen, 
@@ -153,7 +154,7 @@ export default function UIEditorView({
     setLine(hasValidLine ? parsedLine : null);
     try {
       // 🎯 Request specific line to get design snippet
-      const url = `http://${window.location.hostname}:5000/api/editor/read?file=${encodeURIComponent(filePath)}${hasValidLine ? `&line=${parsedLine}` : ''}`;
+      const url = `${API_BASE_URL}/api/editor/read?file=${encodeURIComponent(filePath)}${hasValidLine ? `&line=${parsedLine}` : ''}`;
       const res = await fetch(url);
       if (!res.ok) {
         throw new Error(`Read failed with status ${res.status}`);
@@ -184,7 +185,7 @@ export default function UIEditorView({
     setSaving(true);
     setSaveStatus(null);
     try {
-      const res = await fetch(`http://${window.location.hostname}:5000/api/editor/save`, {
+      const res = await fetch(`${API_BASE_URL}/api/editor/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Sparkles, Send, ArrowRight } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 export default function SummaryView({ summary, typing, accentColor, code, label }) {
   const [chatText, setChatText] = useState('');
@@ -37,7 +38,7 @@ export default function SummaryView({ summary, typing, accentColor, code, label 
 
     setIsAsking(true);
     try {
-      const res = await fetch(`http://${window.location.hostname}:5000/api/ask-gemini`, {
+      const res = await fetch(`${API_BASE_URL}/api/ask-gemini`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, label, question }),

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Hexagon, Activity, GitBranch, Layers, Zap } from 'lucide-react';
 import FlowViewer from './FlowViewer';
 import StatsBar from './StatsBar';
+import { API_BASE_URL } from '../config';
 
 // ── Premium loading animation — neural network pulse ──
 function NeuralLoader() {
@@ -184,7 +185,7 @@ export default function GraphView({
   useEffect(() => {
     if (!isOpen) return;
 
-    const eventSource = new EventSource(`http://${window.location.hostname}:5000/api/shinkei/v1/stream`);
+    const eventSource = new EventSource(`${API_BASE_URL}/api/shinkei/v1/stream`);
 
     eventSource.onmessage = (event) => {
       try {
