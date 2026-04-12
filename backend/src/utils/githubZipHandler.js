@@ -53,14 +53,17 @@ async function resolveZipUrl(url) {
         return getZipUrl(url);
     }
 
-    try {
-        const repoMeta = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, {
-            headers: {
-                Accept: 'application/vnd.github+json',
-                'User-Agent': 'shinkei-repo-fetcher'
-            }
-        });
+    const headers = {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'shinkei-repo-fetcher'
+    };
 
+    if (process.env.GITHUB_TOKEN) {
+        headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+    }
+
+    try {
+        const repoMeta = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
         const defaultBranch = repoMeta?.data?.default_branch || 'main';
         return `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${defaultBranch}`;
     } catch (err) {
@@ -68,17 +71,30 @@ async function resolveZipUrl(url) {
         if (status === 404) {
             throw new Error("Repository not found on GitHub. Verify owner/repo and try again.");
         }
-        if (status === 401 || status === 403) {
-            throw new Error("Repository exists but metadata is not accessible (private or rate-limited).");
-        }
-
-        // Fallback for transient GitHub API issues
+        
+        // If 401/403 (Rate limited or private metadata), try fallback to 'main' 
+        // codeload might still work for public repos even if API is rate limited
+        console.warn(`[Shinkei] GitHub API metadata fetch failed (${status}). Falling back to 'main' branch.`);
         return `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/main`;
     }
 }
 
 async function downloadZip(url, dest) {
-    const res = await axios({ method: 'GET', url, responseType: 'stream' });
+    const headers = {
+        'User-Agent': 'shinkei-repo-fetcher'
+    };
+
+    if (process.env.GITHUB_TOKEN && url.includes('github.com')) {
+        headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+    }
+
+    const res = await axios({ 
+        method: 'GET', 
+        url, 
+        responseType: 'stream',
+        headers
+    });
+    
     const writer = fs.createWriteStream(dest);
     res.data.pipe(writer);
     return new Promise((rs, rj) => { 
